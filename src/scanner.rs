@@ -31,7 +31,7 @@ use crate::{
 pub(crate) struct Scanner {
     /// Configuration options for scanning behavior
     scan_options: ScanOptions,
-    
+
     /// Filter to restrict scanning to specific project types
     project_filter: ProjectFilter,
 }
@@ -57,7 +57,7 @@ impl Scanner {
     ///     threads: 4,
     ///     skip: vec![],
     /// };
-    /// 
+    ///
     /// let scanner = Scanner::new(scan_options, ProjectFilter::All);
     /// ```
     pub(crate) fn new(scan_options: ScanOptions, project_filter: ProjectFilter) -> Self {
@@ -190,6 +190,54 @@ impl Scanner {
         total_size
     }
 
+    /// Detect a Node.js project in the specified directory.
+    ///
+    /// This method checks for the presence of both `package.json` and `node_modules/`
+    /// directory to identify a Node.js project. If found, it attempts to extract
+    /// the project name from the `package.json` file.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Directory path to check for Node.js project
+    /// * `errors` - Shared error collection for reporting parsing issues
+    ///
+    /// # Returns
+    ///
+    /// - `Some(Project)` if a valid Node.js project is detected
+    /// - `None` if the directory doesn't contain a Node.js project
+    ///
+    /// # Detection Criteria
+    ///
+    /// 1. `package.json` file exists in directory
+    /// 2. `node_modules/` subdirectory exists in directory
+    /// 3. The project name is extracted from `package.json` if possible
+    fn detect_node_project(
+        &self,
+        path: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<Project> {
+        let package_json = path.join("package.json");
+        let node_modules = path.join("node_modules");
+
+        if package_json.exists() && node_modules.exists() {
+            let name = self.extract_node_project_name(&package_json, errors);
+
+            let build_arts = BuildArtifacts {
+                path: path.join("node_modules"),
+                size: 0, // Will be calculated later
+            };
+
+            return Some(Project::new(
+                ProjectType::Node,
+                path.to_path_buf(),
+                build_arts,
+                name,
+            ));
+        }
+
+        None
+    }
+
     /// Detect if a directory entry represents a development project.
     ///
     /// This method examines a directory entry and determines if it contains
@@ -292,54 +340,6 @@ impl Scanner {
         None
     }
 
-    /// Detect a Node.js project in the specified directory.
-    ///
-    /// This method checks for the presence of both `package.json` and `node_modules/`
-    /// directory to identify a Node.js project. If found, it attempts to extract
-    /// the project name from the `package.json` file.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Directory path to check for Node.js project
-    /// * `errors` - Shared error collection for reporting parsing issues
-    ///
-    /// # Returns
-    ///
-    /// - `Some(Project)` if a valid Node.js project is detected
-    /// - `None` if the directory doesn't contain a Node.js project
-    ///
-    /// # Detection Criteria
-    ///
-    /// 1. `package.json` file exists in directory
-    /// 2. `node_modules/` subdirectory exists in directory
-    /// 3. The project name is extracted from `package.json` if possible
-    fn detect_node_project(
-        &self,
-        path: &Path,
-        errors: &Arc<Mutex<Vec<String>>>,
-    ) -> Option<Project> {
-        let package_json = path.join("package.json");
-        let node_modules = path.join("node_modules");
-
-        if package_json.exists() && node_modules.exists() {
-            let name = self.extract_node_project_name(&package_json, errors);
-
-            let build_arts = BuildArtifacts {
-                path: path.join("node_modules"),
-                size: 0, // Will be calculated later
-            };
-
-            return Some(Project::new(
-                ProjectType::Node,
-                path.to_path_buf(),
-                build_arts,
-                name,
-            ));
-        }
-
-        None
-    }
-
     /// Extract the project name from a Cargo.toml file.
     ///
     /// This method performs simple TOML parsing to extract the project name
@@ -366,31 +366,29 @@ impl Scanner {
         cargo_toml: &Path,
         errors: &Arc<Mutex<Vec<String>>>,
     ) -> Option<String> {
-        match fs::read_to_string(cargo_toml) {
-            Ok(content) => {
-                // Simple TOML parsing - look for name = "..."
-                for line in content.lines() {
-                    let line = line.trim();
-                    if line.starts_with("name") && line.contains('=') {
-                        if let Some(start) = line.find('"') {
-                            if let Some(end) = line.rfind('"') {
-                                if start != end {
-                                    return Some(line[start + 1..end].to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-                None
-            }
-            Err(e) => {
-                if self.scan_options.verbose {
-                    let mut errors = errors.lock().unwrap();
-                    errors.push(format!("Error reading {}: {e}", cargo_toml.display()));
-                }
-                None
-            }
+        let content = self.read_file_content(cargo_toml, errors)?;
+        Self::parse_toml_name_field(&content)
+    }
+
+    /// Extract a quoted string value from a line.
+    fn extract_quoted_value(line: &str) -> Option<String> {
+        let start = line.find('"')?;
+        let end = line.rfind('"')?;
+
+        if start == end {
+            return None;
         }
+
+        Some(line[start + 1..end].to_string())
+    }
+
+    /// Extract the name from a single TOML line if it contains a name field.
+    fn extract_name_from_line(line: &str) -> Option<String> {
+        if !Self::is_name_line(line) {
+            return None;
+        }
+
+        Self::extract_quoted_value(line)
     }
 
     /// Extract the project name from a package.json file.
@@ -442,6 +440,49 @@ impl Scanner {
         }
     }
 
+    /// Check if a line contains a name field assignment.
+    fn is_name_line(line: &str) -> bool {
+        line.starts_with("name") && line.contains('=')
+    }
+
+    /// Log a file reading error if verbose mode is enabled.
+    fn log_file_error(
+        &self,
+        file_path: &Path,
+        error: &std::io::Error,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) {
+        if self.scan_options.verbose {
+            let mut errors = errors.lock().unwrap();
+            errors.push(format!("Error reading {}: {error}", file_path.display()));
+        }
+    }
+
+    /// Parse the name field from TOML content.
+    fn parse_toml_name_field(content: &str) -> Option<String> {
+        for line in content.lines() {
+            if let Some(name) = Self::extract_name_from_line(line.trim()) {
+                return Some(name);
+            }
+        }
+        None
+    }
+
+    /// Read the content of a file and handle errors appropriately.
+    fn read_file_content(
+        &self,
+        file_path: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<String> {
+        match fs::read_to_string(file_path) {
+            Ok(content) => Some(content),
+            Err(e) => {
+                self.log_file_error(file_path, &e, errors);
+                None
+            }
+        }
+    }
+
     /// Determine if a directory entry should be scanned for projects.
     ///
     /// This method implements the filtering logic to decide whether a directory
@@ -488,11 +529,10 @@ impl Scanner {
         }
 
         // Skip any directory inside a node_modules directory
-        if path.ancestors().any(|ancestor| {
-            ancestor
-                .file_name()
-                .and_then(|n| n.to_str()) == Some("node_modules")
-        }) {
+        if path
+            .ancestors()
+            .any(|ancestor| ancestor.file_name().and_then(|n| n.to_str()) == Some("node_modules"))
+        {
             return false;
         }
 

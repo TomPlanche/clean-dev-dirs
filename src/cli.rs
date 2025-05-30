@@ -47,7 +47,7 @@ struct ExecutionArgs {
 
     /// Collect the cleanable projects and list the reclaimable space
     ///
-    /// When enabled, performs all scans and filtering but doesn't 
+    /// When enabled, performs all scans and filtering but doesn't
     /// delete any files. Useful for previewing what would be cleaned.
     #[arg(long)]
     dry_run: bool,
@@ -186,7 +186,7 @@ pub(crate) enum ProjectFilter {
     /// Include only Rust projects (Cargo.toml + target/)
     RustOnly,
 
-    /// Include only Node.js projects (package.json + node_modules/)
+    /// Include only Node.js projects (package.json + `node_modules`/)
     NodeOnly,
 }
 

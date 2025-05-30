@@ -20,11 +20,11 @@ pub(crate) enum ProjectType {
     /// Rust projects are identified by the presence of both a `Cargo.toml`
     /// file and a `target/` directory in the same location.
     Rust,
-    
-    /// Node.js project with package.json and node_modules/ directory
+
+    /// Node.js project with package.json and `node_modules`/ directory
     ///
     /// Node.js projects are identified by the presence of both a `package.json`
-    /// file and a `node_modules/` directory in the same location.
+    /// file and a `node_modules`/ directory in the same location.
     Node,
 }
 
@@ -34,13 +34,13 @@ pub(crate) enum ProjectType {
 /// that are candidates for cleanup, including their location and total size.
 #[derive(Clone)]
 pub(crate) struct BuildArtifacts {
-    /// Path to the build directory (target/ or node_modules/)
+    /// Path to the build directory (target/ or `node_modules`/)
     ///
     /// This is the directory that will be deleted during cleanup operations.
     /// For Rust projects, this points to the `target/` directory.
     /// For Node.js projects, this points to the `node_modules/` directory.
     pub(crate) path: PathBuf,
-    
+
     /// Total size of the build directory in bytes
     ///
     /// This value is calculated by recursively summing the sizes of all files
@@ -105,7 +105,7 @@ impl Project {
     ///     path: PathBuf::from("/path/to/project/target"),
     ///     size: 1024,
     /// };
-    /// 
+    ///
     /// let project = Project::new(
     ///     ProjectType::Rust,
     ///     PathBuf::from("/path/to/project"),

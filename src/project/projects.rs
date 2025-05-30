@@ -111,7 +111,7 @@ impl Projects {
     /// Calculate the total size of all build directories in the collection.
     ///
     /// This method sums up the sizes of all build directories (target/ or
-    /// node_modules/) across all projects in the collection to provide a
+    /// `node_modules`/) across all projects in the collection to provide a
     /// total estimate of reclaimable disk space.
     ///
     /// # Returns

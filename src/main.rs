@@ -40,7 +40,7 @@ use clap::Parser;
 use cleaner::Cleaner;
 use cli::{Cli, FilterOptions};
 use colored::Colorize;
-use humansize::{format_size, DECIMAL};
+use humansize::{DECIMAL, format_size};
 use project::{Project, Projects};
 use rayon::prelude::*;
 use scanner::Scanner;
@@ -185,75 +185,81 @@ fn parse_size(size_str: &str) -> Result<u64> {
     }
 
     let size_str = size_str.to_uppercase();
+    let (number_str, multiplier) = parse_size_unit(&size_str);
 
-    // Parse the numeric part and unit separately
-    let (number_str, multiplier) = if size_str.ends_with("KB") {
-        (size_str.trim_end_matches("KB"), 1_000u64)
-    } else if size_str.ends_with("MB") {
-        (size_str.trim_end_matches("MB"), 1_000_000u64)
-    } else if size_str.ends_with("GB") {
-        (size_str.trim_end_matches("GB"), 1_000_000_000u64)
-    } else if size_str.ends_with("KIB") {
-        (size_str.trim_end_matches("KIB"), 1_024u64)
-    } else if size_str.ends_with("MIB") {
-        (size_str.trim_end_matches("MIB"), 1_048_576u64)
-    } else if size_str.ends_with("GIB") {
-        (size_str.trim_end_matches("GIB"), 1_073_741_824u64)
-    } else {
-        (size_str.as_str(), 1u64)
-    };
-
-    // Handle decimal numbers by converting to fixed-point arithmetic
     if number_str.contains('.') {
-        // Split into integer and fractional parts
-        let parts: Vec<&str> = number_str.split('.').collect();
-        if parts.len() != 2 {
-            return Err(anyhow::anyhow!("Invalid decimal format: {number_str}"));
-        }
-
-        let integer_part: u64 = parts[0].parse().unwrap_or(0);
-        let fractional_str = parts[1];
-
-        // Convert fractional part to integer (e.g., "5" -> 500000000 for 0.5)
-        let fractional_digits = fractional_str.len();
-        if fractional_digits > 9 {
-            return Err(anyhow::anyhow!("Too many decimal places: {fractional_str}"));
-        }
-
-        let fractional_part: u64 = fractional_str.parse()?;
-        let fractional_multiplier = if fractional_digits <= 9 {
-            10u64.pow(9 - u32::try_from(fractional_digits)?)
-        } else {
-            return Err(anyhow::anyhow!(
-                "Too many fractional digits: {fractional_digits}"
-            ));
-        };
-        let fractional_normalized = fractional_part * fractional_multiplier;
-
-        // Calculate: (integer_part * multiplier) + (fractional_part * multiplier / 10^9)
-        let integer_result = integer_part
-            .checked_mul(multiplier)
-            .ok_or_else(|| anyhow::anyhow!("Integer overflow: {integer_part} * {multiplier}"))?;
-
-        let fractional_result = fractional_normalized
-            .checked_mul(multiplier)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Fractional overflow: {fractional_normalized} * {multiplier}")
-            })?
-            / 1_000_000_000u64;
-
-        integer_result
-            .checked_add(fractional_result)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Final overflow: {integer_result} + {fractional_result}")
-            })
+        parse_decimal_size(number_str, multiplier)
     } else {
-        // For integer values, use integer arithmetic
-        let number: u64 = number_str.parse()?;
-        number
-            .checked_mul(multiplier)
-            .ok_or_else(|| anyhow::anyhow!("Size value overflow: {number} * {multiplier}"))
+        parse_integer_size(number_str, multiplier)
     }
+}
+
+/// Parse the unit suffix and return the numeric part with its multiplier.
+fn parse_size_unit(size_str: &str) -> (&str, u64) {
+    const UNITS: &[(&str, u64)] = &[
+        ("GIB", 1_073_741_824),
+        ("MIB", 1_048_576),
+        ("KIB", 1_024),
+        ("GB", 1_000_000_000),
+        ("MB", 1_000_000),
+        ("KB", 1_000),
+    ];
+
+    for (suffix, multiplier) in UNITS {
+        if size_str.ends_with(suffix) {
+            return (size_str.trim_end_matches(suffix), *multiplier);
+        }
+    }
+
+    (size_str, 1)
+}
+
+/// Parse a decimal size value (e.g., "1.5").
+fn parse_decimal_size(number_str: &str, multiplier: u64) -> Result<u64> {
+    let parts: Vec<&str> = number_str.split('.').collect();
+    if parts.len() != 2 {
+        return Err(anyhow::anyhow!("Invalid decimal format: {number_str}"));
+    }
+
+    let integer_part: u64 = parts[0].parse().unwrap_or(0);
+    let fractional_result = parse_fractional_part(parts[1])?;
+
+    let integer_bytes = multiply_with_overflow_check(integer_part, multiplier)?;
+    let fractional_bytes =
+        multiply_with_overflow_check(fractional_result, multiplier)? / 1_000_000_000;
+
+    add_with_overflow_check(integer_bytes, fractional_bytes)
+}
+
+/// Parse the fractional part of a decimal number.
+fn parse_fractional_part(fractional_str: &str) -> Result<u64> {
+    let fractional_digits = fractional_str.len();
+    if fractional_digits > 9 {
+        return Err(anyhow::anyhow!("Too many decimal places: {fractional_str}"));
+    }
+
+    let fractional_part: u64 = fractional_str.parse()?;
+    let fractional_multiplier = 10u64.pow(9 - u32::try_from(fractional_digits)?);
+
+    Ok(fractional_part * fractional_multiplier)
+}
+
+/// Parse an integer size value.
+fn parse_integer_size(number_str: &str, multiplier: u64) -> Result<u64> {
+    let number: u64 = number_str.parse()?;
+    multiply_with_overflow_check(number, multiplier)
+}
+
+/// Multiply two values with overflow checking.
+fn multiply_with_overflow_check(a: u64, b: u64) -> Result<u64> {
+    a.checked_mul(b)
+        .ok_or_else(|| anyhow::anyhow!("Size value overflow: {a} * {b}"))
+}
+
+/// Add two values with overflow checking.
+fn add_with_overflow_check(a: u64, b: u64) -> Result<u64> {
+    a.checked_add(b)
+        .ok_or_else(|| anyhow::anyhow!("Final overflow: {a} + {b}"))
 }
 
 /// Filter projects based on size and modification time criteria.
@@ -290,27 +296,37 @@ fn filter_projects(projects: Vec<Project>, filter_opts: &FilterOptions) -> Resul
 
     Ok(projects
         .into_par_iter()
-        .filter(|project| {
-            // Size filter
-            if project.build_arts.size < keep_size_bytes {
-                return false;
-            }
-
-            // Day filter
-            if keep_days > 0 {
-                if let Result::Ok(metadata) = fs::metadata(&project.build_arts.path) {
-                    if let Result::Ok(modified) = metadata.modified() {
-                        let modified_time: DateTime<Local> = modified.into();
-                        let days_ago = Local::now() - chrono::Duration::days(i64::from(keep_days));
-
-                        if modified_time > days_ago {
-                            return false;
-                        }
-                    }
-                }
-            }
-
-            true
-        })
+        .filter(|project| meets_size_criteria(project, keep_size_bytes))
+        .filter(|project| meets_time_criteria(project, keep_days))
         .collect())
+}
+
+/// Check if a project meets the size criteria.
+fn meets_size_criteria(project: &Project, min_size: u64) -> bool {
+    project.build_arts.size >= min_size
+}
+
+/// Check if a project meets the time criteria.
+fn meets_time_criteria(project: &Project, keep_days: u32) -> bool {
+    if keep_days == 0 {
+        return true;
+    }
+
+    is_project_old_enough(project, keep_days)
+}
+
+/// Check if a project is old enough based on its modification time.
+fn is_project_old_enough(project: &Project, keep_days: u32) -> bool {
+    let Result::Ok(metadata) = fs::metadata(&project.build_arts.path) else {
+        return true; // If we can't read metadata, don't filter it out
+    };
+
+    let Result::Ok(modified) = metadata.modified() else {
+        return true; // If we can't read modification time, don't filter it out
+    };
+
+    let modified_time: DateTime<Local> = modified.into();
+    let cutoff_time = Local::now() - chrono::Duration::days(i64::from(keep_days));
+
+    modified_time <= cutoff_time
 }
