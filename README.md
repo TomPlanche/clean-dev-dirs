@@ -1,6 +1,6 @@
 # 🧹clean-dev-dirs
 
-> A fast and efficient CLI tool for recursively cleaning Rust `target/` and Node.js `node_modules/` directories to reclaim disk space.
+> A fast and efficient CLI tool for recursively cleaning Rust `target/`, Node.js `node_modules/`, Python cache, and Go `vendor/` directories to reclaim disk space.
 
 <p align="center">
   <a href="https://crates.io/crates/clean-dev-dirs"><img src="https://img.shields.io/crates/v/clean-dev-dirs.svg" alt="Crates.io Version"></a>
@@ -12,7 +12,7 @@
 
 ## 🚀 Features
 
-- **Multi-language support**: Clean both Rust (`target/`) and Node.js (`node_modules/`) build artifacts
+- **Multi-language support**: Clean Rust (`target/`), Node.js (`node_modules/`), Python (cache dirs), and Go (`vendor/`) build artifacts
 - **Parallel scanning**: Fast directory traversal using multithreading
 - **Smart filtering**: Filter by project size, modification time, and project type
 - **Interactive mode**: Choose which projects to clean with an interactive interface
@@ -25,7 +25,7 @@
 This project is inspired by [cargo-clean-all](https://github.com/dnlmlr/cargo-clean-all), a Rust-specific tool for
 cleaning cargo projects. I've improved upon the original concept with:
 
-- **Multi-language support**: Extended beyond Rust to support Node.js projects
+- **Multi-language support**: Extended beyond Rust to support Node.js, Python, and Go projects
 - **Parallel scanning**: Significantly faster directory traversal using multithreading
 - **Cleaner code architecture**: Well-structured, modular codebase for better maintainability
 
@@ -77,6 +77,12 @@ clean-dev-dirs --rust-only
 
 # Clean only Node.js projects
 clean-dev-dirs --node-only
+
+# Clean only Python projects
+clean-dev-dirs --python-only
+
+# Clean only Go projects
+clean-dev-dirs --go-only
 ```
 
 ### Advanced Options
@@ -102,6 +108,8 @@ clean-dev-dirs --yes
 | `--keep-days`   | `-d`  | Ignore projects modified in the last N days                |
 | `--rust-only`   |       | Clean only Rust projects                                   |
 | `--node-only`   |       | Clean only Node.js projects                                |
+| `--python-only` |       | Clean only Python projects                                 |
+| `--go-only`     |       | Clean only Go projects                                     |
 | `--yes`         | `-y`  | Don't ask for confirmation; clean all detected projects    |
 | `--dry-run`     |       | List cleanable projects without actually cleaning          |
 | `--interactive` | `-i`  | Use interactive project selection                          |
@@ -123,6 +131,8 @@ The tool automatically detects development projects by looking for:
 
 - **Rust projects**: Directories containing both `Cargo.toml` and `target/`
 - **Node.js projects**: Directories containing both `package.json` and `node_modules/`
+- **Python projects**: Directories containing Python config files (`requirements.txt`, `setup.py`, `pyproject.toml`) and cache dirs (`__pycache__`, `.pytest_cache`, `venv`, etc.)
+- **Go projects**: Directories containing both `go.mod` and `vendor/`
 
 ## 🛡️ Safety Features
 
@@ -137,6 +147,8 @@ The tool provides colored, human-readable output including:
 
 - 🦀 Rust project indicators
 - 📦 Node.js project indicators
+- 🐍 Python project indicators
+- 🐹 Go project indicators
 - 📊 Size statistics in human-readable format
 - ✨ Status messages and progress indicators
 - 🧪 Dry-run previews

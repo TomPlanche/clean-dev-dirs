@@ -26,6 +26,18 @@ pub(crate) enum ProjectType {
     /// Node.js projects are identified by the presence of both a `package.json`
     /// file and a `node_modules`/ directory in the same location.
     Node,
+
+    /// Python project with requirements.txt, setup.py, or pyproject.toml and cache directories
+    ///
+    /// Python projects are identified by the presence of Python configuration files
+    /// and various cache/build directories like `__pycache__`, `.pytest_cache`, etc.
+    Python,
+
+    /// Go project with `go.mod` and vendor/ directory
+    ///
+    /// Go projects are identified by the presence of both a `go.mod`
+    /// file and a `vendor/` directory in the same location.
+    Go,
 }
 
 /// Information about build artifacts that can be cleaned.
@@ -133,7 +145,7 @@ impl Display for Project {
     ///
     /// This implementation provides a human-readable representation of the project
     /// that includes:
-    /// - An emoji indicator based on the project type (🦀 for Rust, 📦 for Node.js)
+    /// - An emoji indicator based on the project type (🦀 for Rust, 📦 for Node.js, 🐍 for Python, 🐹 for Go)
     /// - The project name if available, otherwise just the path
     /// - The project's root path
     ///
@@ -141,11 +153,15 @@ impl Display for Project {
     ///
     /// - `🦀 my-rust-project (/path/to/project)`
     /// - `📦 my-node-app (/path/to/app)`
+    /// - `🐍 my-python-project (/path/to/project)`
+    /// - `🐹 my-go-project (/path/to/project)`
     /// - `🦀 /path/to/unnamed/project` (when no name is available)
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let icon = match self.kind {
             ProjectType::Rust => "🦀",
             ProjectType::Node => "📦",
+            ProjectType::Python => "🐍",
+            ProjectType::Go => "🐹",
         };
 
         if let Some(name) = &self.name {

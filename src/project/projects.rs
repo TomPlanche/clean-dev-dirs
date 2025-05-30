@@ -143,10 +143,10 @@ impl Projects {
     /// # Interface Details
     ///
     /// - Uses a colorful theme for better visual appeal
-    /// - Shows project type icons (🦀 for Rust, 📦 for Node.js)
+    /// - Shows project type icons (🦀 for Rust, 📦 for Node.js, 🐍 for Python, 🐹 for Go)
     /// - Displays project paths and sizes in human-readable format
     /// - Allows toggling selections with space bar
-    /// - Confirms selection with Enter key
+    /// - Confirms selection with the Enter key
     ///
     /// # Examples
     ///
@@ -171,6 +171,8 @@ impl Projects {
                 let icon = match p.kind {
                     ProjectType::Rust => "🦀",
                     ProjectType::Node => "📦",
+                    ProjectType::Python => "🐍",
+                    ProjectType::Go => "🐹",
                 };
                 format!(
                     "{icon} {} ({})",
@@ -211,7 +213,9 @@ impl Projects {
     ///
     /// This method analyzes the collection and prints statistics including:
     /// - Number and total size of Rust projects
-    /// - Number and total size of Node.js projects  
+    /// - Number and total size of Node.js projects
+    /// - Number and total size of Python projects
+    /// - Number and total size of Go projects
     /// - Total reclaimable space across all projects
     ///
     /// The output is formatted with colors and emoji icons for better readability.
@@ -233,13 +237,19 @@ impl Projects {
     /// ```text
     ///   🦀 5 Rust projects (2.3 GB)
     ///   📦 3 Node.js projects (1.7 GB)
+    ///   🐍 2 Python projects (1.2 GB)
+    ///   🐹 1 Go project (0.5 GB)
     ///   💾 Total reclaimable space: 4.0 GB
     /// ```
     pub(crate) fn print_summary(&self, total_size: u64) {
         let mut rust_count = 0;
         let mut node_count = 0;
+        let mut python_count = 0;
+        let mut go_count = 0;
         let mut rust_size = 0u64;
         let mut node_size = 0u64;
+        let mut python_size = 0u64;
+        let mut go_size = 0u64;
 
         for project in &self.0 {
             match project.kind {
@@ -250,6 +260,14 @@ impl Projects {
                 ProjectType::Node => {
                     node_count += 1;
                     node_size += project.build_arts.size;
+                }
+                ProjectType::Python => {
+                    python_count += 1;
+                    python_size += project.build_arts.size;
+                }
+                ProjectType::Go => {
+                    go_count += 1;
+                    go_size += project.build_arts.size;
                 }
             }
         }
@@ -267,6 +285,22 @@ impl Projects {
                 "  📦 {} Node.js projects ({})",
                 node_count.to_string().bright_white(),
                 format_size(node_size, DECIMAL).bright_white()
+            );
+        }
+
+        if python_count > 0 {
+            println!(
+                "  🐍 {} Python projects ({})",
+                python_count.to_string().bright_white(),
+                format_size(python_size, DECIMAL).bright_white()
+            );
+        }
+
+        if go_count > 0 {
+            println!(
+                "  🐹 {} Go projects ({})",
+                go_count.to_string().bright_white(),
+                format_size(go_size, DECIMAL).bright_white()
             );
         }
 

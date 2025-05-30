@@ -12,6 +12,7 @@
 //! - [`BuildArtifacts`] - Information about build directories and their sizes
 
 #[allow(clippy::module_inception)]
+// This is acceptable as it is the main module for project management
 pub(crate) mod project;
 pub(crate) mod projects;
 

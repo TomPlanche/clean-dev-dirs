@@ -258,6 +258,8 @@ impl Scanner {
     ///
     /// - **Rust projects**: Presence of both `Cargo.toml` and `target/` directory
     /// - **Node.js projects**: Presence of both `package.json` and `node_modules/` directory
+    /// - **Python projects**: Presence of configuration files and cache directories
+    /// - **Go projects**: Presence of both `go.mod` and `vendor/` directory
     fn detect_project(
         &self,
         entry: &DirEntry,
@@ -285,6 +287,26 @@ impl Scanner {
             ProjectFilter::All | ProjectFilter::NodeOnly
         ) {
             if let Some(project) = self.detect_node_project(path, errors) {
+                return Some(project);
+            }
+        }
+
+        // Check for a Python project
+        if matches!(
+            self.project_filter,
+            ProjectFilter::All | ProjectFilter::PythonOnly
+        ) {
+            if let Some(project) = self.detect_python_project(path, errors) {
+                return Some(project);
+            }
+        }
+
+        // Check for a Go project
+        if matches!(
+            self.project_filter,
+            ProjectFilter::All | ProjectFilter::GoOnly
+        ) {
+            if let Some(project) = self.detect_go_project(path, errors) {
                 return Some(project);
             }
         }
@@ -509,12 +531,12 @@ impl Scanner {
     /// - Version control directories: `.git`, `.svn`, `.hg`
     /// - Python cache and virtual environment directories
     /// - Temporary directories: `temp`, `tmp`
-    ///
-    /// # Performance Impact
-    ///
-    /// This filtering significantly reduces the number of directories that need
-    /// to be processed, especially in large codebases with many build artifacts
-    /// or deeply nested `node_modules` directories.
+    /// - Go vendor directory
+    /// - Python pytest cache
+    /// - Python tox environments
+    /// - Python setuptools
+    /// - Python coverage files
+    /// - Node.js modules (already handled above but added for completeness)
     fn should_scan_entry(&self, entry: &DirEntry) -> bool {
         let path = entry.path();
 
@@ -559,6 +581,12 @@ impl Scanner {
             ".env",
             "temp",
             "tmp",
+            "vendor",        // Go vendor directory
+            ".pytest_cache", // Python pytest cache
+            ".tox",          // Python tox environments
+            ".eggs",         // Python setuptools
+            ".coverage",     // Python coverage files
+            "node_modules",  // Node.js modules (already handled above but added for completeness)
         ];
 
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
@@ -568,5 +596,294 @@ impl Scanner {
         }
 
         true
+    }
+
+    /// Detect a Python project in the specified directory.
+    ///
+    /// This method checks for Python configuration files and associated cache directories.
+    /// It looks for multiple build artifacts that can be cleaned.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Directory path to check for a Python project
+    /// * `errors` - Shared error collection for reporting parsing issues
+    ///
+    /// # Returns
+    ///
+    /// - `Some(Project)` if a valid Python project is detected
+    /// - `None` if the directory doesn't contain a Python project
+    ///
+    /// # Detection Criteria
+    ///
+    /// A Python project is identified by having:
+    /// 1. At least one of: requirements.txt, setup.py, pyproject.toml, setup.cfg, Pipfile
+    /// 2. At least one of the cache/build directories: `__pycache__`, `.pytest_cache`, venv, .venv, build, dist, .eggs
+    fn detect_python_project(
+        &self,
+        path: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<Project> {
+        let config_files = [
+            "requirements.txt",
+            "setup.py",
+            "pyproject.toml",
+            "setup.cfg",
+            "Pipfile",
+            "pipenv.lock",
+            "poetry.lock",
+        ];
+
+        let build_dirs = [
+            "__pycache__",
+            ".pytest_cache",
+            "venv",
+            ".venv",
+            "build",
+            "dist",
+            ".eggs",
+            ".tox",
+            ".coverage",
+        ];
+
+        // Check if any config file exists
+        let has_config = config_files.iter().any(|&file| path.join(file).exists());
+
+        if !has_config {
+            return None;
+        }
+
+        // Find the largest cache/build directory that exists
+        let mut largest_build_dir = None;
+        let mut largest_size = 0;
+
+        for &dir_name in &build_dirs {
+            let dir_path = path.join(dir_name);
+
+            if dir_path.exists() && dir_path.is_dir() {
+                if let Ok(size) = Self::calculate_directory_size(&dir_path) {
+                    if size > largest_size {
+                        largest_size = size;
+                        largest_build_dir = Some(dir_path);
+                    }
+                }
+            }
+        }
+
+        if let Some(build_path) = largest_build_dir {
+            let name = self.extract_python_project_name(path, errors);
+
+            let build_arts = BuildArtifacts {
+                path: build_path,
+                size: 0, // Will be calculated later
+            };
+
+            return Some(Project::new(
+                ProjectType::Python,
+                path.to_path_buf(),
+                build_arts,
+                name,
+            ));
+        }
+
+        None
+    }
+
+    /// Detect a Go project in the specified directory.
+    ///
+    /// This method checks for the presence of both `go.mod` and `vendor/`
+    /// directory to identify a Go project. If found, it attempts to extract
+    /// the project name from the `go.mod` file.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Directory path to check for a Go project
+    /// * `errors` - Shared error collection for reporting parsing issues
+    ///
+    /// # Returns
+    ///
+    /// - `Some(Project)` if a valid Go project is detected
+    /// - `None` if the directory doesn't contain a Go project
+    ///
+    /// # Detection Criteria
+    ///
+    /// 1. `go.mod` file exists in directory
+    /// 2. `vendor/` subdirectory exists in directory
+    /// 3. The project name is extracted from `go.mod` if possible
+    fn detect_go_project(&self, path: &Path, errors: &Arc<Mutex<Vec<String>>>) -> Option<Project> {
+        let go_mod = path.join("go.mod");
+        let vendor_dir = path.join("vendor");
+
+        if go_mod.exists() && vendor_dir.exists() {
+            let name = self.extract_go_project_name(&go_mod, errors);
+
+            let build_arts = BuildArtifacts {
+                path: path.join("vendor"),
+                size: 0, // Will be calculated later
+            };
+
+            return Some(Project::new(
+                ProjectType::Go,
+                path.to_path_buf(),
+                build_arts,
+                name,
+            ));
+        }
+
+        None
+    }
+
+    /// Extract the project name from a Python project directory.
+    ///
+    /// This method attempts to extract the project name from various Python
+    /// configuration files in order of preference.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the Python project directory
+    /// * `errors` - Shared error collection for reporting parsing issues
+    ///
+    /// # Returns
+    ///
+    /// - `Some(String)` containing the project name if successfully extracted
+    /// - `None` if the name cannot be found or parsed
+    ///
+    /// # Extraction Order
+    ///
+    /// 1. pyproject.toml (from [project] name or [tool.poetry] name)
+    /// 2. setup.py (from name= parameter)
+    /// 3. setup.cfg (from [metadata] name)
+    /// 4. Use directory name as a fallback
+    fn extract_python_project_name(
+        &self,
+        path: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<String> {
+        // Try pyproject.toml first
+        let pyproject_toml = path.join("pyproject.toml");
+
+        if pyproject_toml.exists() {
+            if let Some(content) = self.read_file_content(&pyproject_toml, errors) {
+                // Look for [project] name = "..." or [tool.poetry] name = "..."
+                for line in content.lines() {
+                    let line = line.trim();
+
+                    if line.starts_with("name") && line.contains('=') {
+                        if let Some(name) = Self::extract_quoted_value(line) {
+                            return Some(name);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try setup.py
+        let setup_py = path.join("setup.py");
+
+        if setup_py.exists() {
+            if let Some(content) = self.read_file_content(&setup_py, errors) {
+                // Look for name="..." or name='...'
+                for line in content.lines() {
+                    let line = line.trim();
+
+                    if line.contains("name") && line.contains('=') {
+                        if let Some(name) = Self::extract_quoted_value(line) {
+                            return Some(name);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try setup.cfg
+        let setup_cfg = path.join("setup.cfg");
+
+        if setup_cfg.exists() {
+            if let Some(content) = self.read_file_content(&setup_cfg, errors) {
+                let mut in_metadata_section = false;
+
+                for line in content.lines() {
+                    let line = line.trim();
+
+                    if line == "[metadata]" {
+                        in_metadata_section = true;
+                    } else if line.starts_with('[') && line.ends_with(']') {
+                        in_metadata_section = false;
+                    } else if in_metadata_section && line.starts_with("name") && line.contains('=')
+                    {
+                        if let Some(name) = line.split('=').nth(1) {
+                            return Some(name.trim().to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback to directory name
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .map(std::string::ToString::to_string)
+    }
+
+    /// Extract the project name from a `go.mod` file.
+    ///
+    /// This method parses a Go project's `go.mod` file to extract
+    /// the module name, which typically represents the project.
+    ///
+    /// # Arguments
+    ///
+    /// * `go_mod` - Path to the `go.mod` file
+    /// * `errors` - Shared error collection for reporting parsing issues
+    ///
+    /// # Returns
+    ///
+    /// - `Some(String)` containing the module name if successfully extracted
+    /// - `None` if the name cannot be found or parsed
+    ///
+    /// # Parsing Strategy
+    ///
+    /// The method looks for the first line starting with `module ` and extracts
+    /// the module path. For better display, it takes the last component of the path.
+    fn extract_go_project_name(
+        &self,
+        go_mod: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<String> {
+        let content = self.read_file_content(go_mod, errors)?;
+
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with("module ") {
+                let module_path = line.strip_prefix("module ")?.trim();
+
+                // Take the last component of the module path for a cleaner name
+                if let Some(name) = module_path.split('/').next_back() {
+                    return Some(name.to_string());
+                }
+
+                return Some(module_path.to_string());
+            }
+        }
+
+        None
+    }
+
+    /// Calculate the size of a directory recursively.
+    ///
+    /// This is a helper method used for Python projects to determine which
+    /// cache directory is the largest and should be the primary cleanup target.
+    fn calculate_directory_size(dir_path: &Path) -> std::io::Result<u64> {
+        let mut total_size = 0;
+
+        for entry in fs::read_dir(dir_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                total_size += Self::calculate_directory_size(&path).unwrap_or(0);
+            } else {
+                total_size += entry.metadata()?.len();
+            }
+        }
+
+        Ok(total_size)
     }
 }

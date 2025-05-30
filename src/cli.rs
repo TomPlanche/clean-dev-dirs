@@ -65,20 +65,36 @@ struct ExecutionArgs {
 /// These options restrict cleaning to specific project types. The arguments
 /// are mutually exclusive to prevent conflicting selections.
 #[derive(Parser)]
+#[allow(clippy::struct_excessive_bools)] // This is acceptable here due to the nature of the CLI
 struct ProjectTypeArgs {
     /// Clean only Rust projects
     ///
     /// When enabled, only directories containing `Cargo.toml` and `target/`
     /// will be considered for cleanup.
-    #[arg(long, conflicts_with = "node_only")]
+    #[arg(long, conflicts_with_all = ["node_only", "python_only", "go_only"])]
     rust_only: bool,
 
     /// Clean only Node.js projects
     ///
     /// When enabled, only directories containing `package.json` and `node_modules/`
     /// will be considered for cleanup.
-    #[arg(long, conflicts_with = "rust_only")]
+    #[arg(long, conflicts_with_all = ["rust_only", "python_only", "go_only"])]
     node_only: bool,
+
+    /// Clean only Python projects
+    ///
+    /// When enabled, only directories containing Python configuration files
+    /// (requirements.txt, setup.py, pyproject.toml) and cache directories
+    /// (`__pycache__`, `.pytest_cache`, venv, .venv) will be considered for cleanup.
+    #[arg(long, conflicts_with_all = ["rust_only", "node_only", "go_only"])]
+    python_only: bool,
+
+    /// Clean only Go projects
+    ///
+    /// When enabled, only directories containing `go.mod` and `vendor/`
+    /// will be considered for cleanup.
+    #[arg(long, conflicts_with_all = ["rust_only", "node_only", "python_only"])]
+    go_only: bool,
 }
 
 /// Command-line arguments for controlling directory scanning behavior.
@@ -122,7 +138,7 @@ struct ScanningArgs {
 /// combining all argument groups and providing the main entry point for command parsing.
 #[derive(Parser)]
 #[command(name = "clean-dev-dirs")]
-#[command(about = "Recursively clean all Rust target and Node.js node_modules directories")]
+#[command(about = "Recursively clean Rust, Node.js, Python, and Go development directories")]
 pub(crate) struct Cli {
     /// The directory to search for projects
     ///
@@ -180,7 +196,7 @@ pub struct FilterOptions {
 /// development projects.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ProjectFilter {
-    /// Include both Rust and Node.js projects
+    /// Include all supported project types (Rust, Node.js, Python, Go)
     All,
 
     /// Include only Rust projects (Cargo.toml + target/)
@@ -188,6 +204,12 @@ pub(crate) enum ProjectFilter {
 
     /// Include only Node.js projects (package.json + `node_modules`/)
     NodeOnly,
+
+    /// Include only Python projects (requirements.txt/setup.py/pyproject.toml + cache dirs)
+    PythonOnly,
+
+    /// Include only Go projects (go.mod + vendor/)
+    GoOnly,
 }
 
 /// Configuration for directory scanning behavior.
@@ -216,12 +238,18 @@ impl Cli {
     ///
     /// - [`ProjectFilter::RustOnly`] if `--rust-only` was specified
     /// - [`ProjectFilter::NodeOnly`] if `--node-only` was specified  
-    /// - [`ProjectFilter::All`] if neither flag was specified
+    /// - [`ProjectFilter::PythonOnly`] if `--python-only` was specified
+    /// - [`ProjectFilter::GoOnly`] if `--go-only` was specified
+    /// - [`ProjectFilter::All`] if no specific flag was specified
     pub(crate) fn project_filter(&self) -> ProjectFilter {
         if self.project_type.rust_only {
             ProjectFilter::RustOnly
         } else if self.project_type.node_only {
             ProjectFilter::NodeOnly
+        } else if self.project_type.python_only {
+            ProjectFilter::PythonOnly
+        } else if self.project_type.go_only {
+            ProjectFilter::GoOnly
         } else {
             ProjectFilter::All
         }
