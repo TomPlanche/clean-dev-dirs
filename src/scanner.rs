@@ -28,7 +28,7 @@ use crate::{
 /// and identifying development projects (Rust and Node.js) along with their
 /// build artifacts. It supports configurable filtering and parallel processing
 /// for efficient scanning of large directory structures.
-pub(crate) struct Scanner {
+pub struct Scanner {
     /// Configuration options for scanning behavior
     scan_options: ScanOptions,
 
@@ -60,7 +60,8 @@ impl Scanner {
     ///
     /// let scanner = Scanner::new(scan_options, ProjectFilter::All);
     /// ```
-    pub(crate) fn new(scan_options: ScanOptions, project_filter: ProjectFilter) -> Self {
+    #[must_use]
+    pub fn new(scan_options: ScanOptions, project_filter: ProjectFilter) -> Self {
         Self {
             scan_options,
             project_filter,
@@ -83,6 +84,12 @@ impl Scanner {
     /// A vector of `Project` instances representing all detected projects with
     /// non-zero build directory sizes.
     ///
+    /// # Panics
+    ///
+    /// This method may panic if the progress bar template string is invalid,
+    /// though this should not occur under normal circumstances as the template
+    /// is hardcoded and valid.
+    ///
     /// # Examples
     ///
     /// ```
@@ -97,7 +104,7 @@ impl Scanner {
     /// This method uses parallel processing for both directory traversal and
     /// size calculation to maximize performance on systems with multiple cores
     /// and fast storage.
-    pub(crate) fn scan_directory(&self, root: &Path) -> Vec<Project> {
+    pub fn scan_directory(&self, root: &Path) -> Vec<Project> {
         let errors = Arc::new(Mutex::new(Vec::<String>::new()));
 
         // Create a progress bar
@@ -541,13 +548,17 @@ impl Scanner {
         let path = entry.path();
 
         // Skip directories in the skip list
-        if self
-            .scan_options
-            .skip
-            .iter()
-            .any(|skip| path.starts_with(skip))
-        {
-            return false;
+        for skip in &self.scan_options.skip {
+            // Check if the path contains any of the skip directories as a component
+            if path.components().any(|component| {
+                if let Some(name) = component.as_os_str().to_str() {
+                    name == skip.to_string_lossy()
+                } else {
+                    false
+                }
+            }) {
+                return false;
+            }
         }
 
         // Skip any directory inside a node_modules directory

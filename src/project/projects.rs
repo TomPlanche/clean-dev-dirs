@@ -20,7 +20,7 @@ use super::Project;
 /// higher-level operations such as interactive selection, summary reporting,
 /// and parallel processing support. It serves as the main data structure
 /// for managing collections of projects throughout the application.
-pub(crate) struct Projects(Vec<Project>);
+pub struct Projects(Vec<Project>);
 
 impl From<Vec<Project>> for Projects {
     /// Create a `Projects` collection from a vector of projects.
@@ -125,7 +125,8 @@ impl Projects {
     /// let total_bytes = projects.get_total_size();
     /// println!("Total reclaimable space: {} bytes", total_bytes);
     /// ```
-    pub(crate) fn get_total_size(&self) -> u64 {
+    #[must_use]
+    pub fn get_total_size(&self) -> u64 {
         self.0.iter().map(|p| p.build_arts.size).sum()
     }
 
@@ -163,7 +164,7 @@ impl Projects {
     /// - The terminal doesn't support interactive input
     /// - The user cancels the dialog (Ctrl+C)
     /// - There are I/O errors with the terminal
-    pub(crate) fn interactive_selection(&self) -> Result<Vec<Project>> {
+    pub fn interactive_selection(&self) -> Result<Vec<Project>> {
         let items: Vec<String> = self
             .0
             .iter()
@@ -205,8 +206,28 @@ impl Projects {
     /// # use crate::Projects;
     /// println!("Found {} projects", projects.len());
     /// ```
-    pub(crate) fn len(&self) -> usize {
+    #[must_use]
+    pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    /// Check if the collection is empty.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the collection contains no projects, `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::Projects;
+    /// if projects.is_empty() {
+    ///     println!("No projects found");
+    /// }
+    /// ```
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     /// Print a detailed summary of the projects and their reclaimable space.
@@ -241,7 +262,7 @@ impl Projects {
     ///   🐹 1 Go project (0.5 GB)
     ///   💾 Total reclaimable space: 4.0 GB
     /// ```
-    pub(crate) fn print_summary(&self, total_size: u64) {
+    pub fn print_summary(&self, total_size: u64) {
         let mut rust_count = 0;
         let mut node_count = 0;
         let mut python_count = 0;

@@ -13,8 +13,7 @@ use rayon::prelude::*;
 use std::fs;
 use std::sync::{Arc, Mutex};
 
-use crate::Projects;
-use crate::project::Project;
+use crate::project::{Project, Projects};
 
 /// Handles the cleanup of build directories from development projects.
 ///
@@ -36,6 +35,7 @@ impl Cleaner {
     /// # use crate::Cleaner;
     /// let cleaner = Cleaner::new();
     /// ```
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -51,6 +51,12 @@ impl Cleaner {
     /// # Arguments
     ///
     /// * `projects` - A collection of projects to clean
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the progress bar template string is invalid,
+    /// though this should not occur under normal circumstances as the template
+    /// is hardcoded and valid.
     ///
     /// # Output
     ///
@@ -81,6 +87,7 @@ impl Cleaner {
     /// Individual project cleanup failures do not stop the overall process.
     /// All errors are collected and reported at the end, allowing the
     /// cleanup to proceed for projects that can be successfully processed.
+    #[allow(dead_code)]
     pub fn clean_projects(projects: Projects) {
         let total_projects = projects.len();
         let total_size: u64 = projects.get_total_size();
@@ -214,6 +221,7 @@ impl Cleaner {
 ///     Err(e) => eprintln!("Cleanup failed: {}", e),
 /// }
 /// ```
+#[allow(dead_code)]
 fn clean_single_project(project: &Project) -> Result<u64> {
     let build_dir = &project.build_arts.path;
 
@@ -266,6 +274,7 @@ fn clean_single_project(project: &Project) -> Result<u64> {
 /// let size = calculate_directory_size(Path::new("/path/to/directory"));
 /// println!("Directory size: {} bytes", size);
 /// ```
+#[allow(dead_code)]
 fn calculate_directory_size(path: &std::path::Path) -> u64 {
     let mut total_size = 0u64;
 

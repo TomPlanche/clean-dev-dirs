@@ -13,8 +13,8 @@
 
 #[allow(clippy::module_inception)]
 // This is acceptable as it is the main module for project management
-pub(crate) mod project;
-pub(crate) mod projects;
+pub mod project;
+pub mod projects;
 
-pub(crate) use project::{BuildArtifacts, Project, ProjectType};
-pub(crate) use projects::Projects;
+pub use project::{BuildArtifacts, Project, ProjectType};
+pub use projects::Projects;
