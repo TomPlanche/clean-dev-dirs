@@ -10,7 +10,7 @@ pub(crate) enum ProjectType {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct BuildDirectory {
+pub(crate) struct BuildArtifacts {
     pub(crate) path: PathBuf,
     pub(crate) size: u64,
 }
@@ -24,7 +24,7 @@ pub(crate) struct Project {
     pub(crate) root_path: PathBuf,
 
     /// The build directory to be cleaned (`target/` or `node_modules/`)
-    pub(crate) build_dir: BuildDirectory,
+    pub(crate) build_arts: BuildArtifacts,
 
     /// Name of the project (from Cargo.toml or package.json)
     pub(crate) name: Option<String>,
@@ -32,15 +32,15 @@ pub(crate) struct Project {
 
 impl Project {
     pub fn new(
-        root_path: PathBuf,
-        build_dir: BuildDirectory,
         kind: ProjectType,
+        root_path: PathBuf,
+        build_arts: BuildArtifacts,
         name: Option<String>,
     ) -> Self {
         Self {
-            root_path,
-            build_dir,
             kind,
+            root_path,
+            build_arts,
             name,
         }
     }
