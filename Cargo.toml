@@ -1,7 +1,15 @@
 [package]
 name = "clean-dev-dirs"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+description = "A fast CLI tool for recursively cleaning Rust target/ and Node.js node_modules/ directories to reclaim disk space"
+readme = "README.md"
+homepage = "https://github.com/TomPlanche/clean-dev-dirs"
+repository = "https://github.com/TomPlanche/clean-dev-dirs"
+license = "MIT"
+keywords = ["cli", "cleanup", "rust", "nodejs", "disk-space"]
+categories = ["command-line-utilities", "filesystem"]
+authors = ["Tom Planche <tomplanche@proton.me>"]
 
 [dependencies]
 anyhow = "1.0"

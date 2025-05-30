@@ -1,3 +1,35 @@
+//! # clean-dev-dirs
+//!
+//! A fast and efficient CLI tool for recursively cleaning Rust `target/` and Node.js `node_modules/`
+//! directories to reclaim disk space.
+//!
+//! This tool scans directories to find development projects and their build artifacts, allowing
+//! you to selectively or automatically clean them to free up disk space. It supports parallel
+//! scanning, intelligent filtering, and interactive selection.
+//!
+//! ## Features
+//!
+//! - Multi-language support (Rust and Node.js)
+//! - Parallel directory scanning
+//! - Size and time-based filtering
+//! - Interactive project selection
+//! - Dry-run mode for safe previewing
+//! - Human-readable output with progress indicators
+//!
+//! ## Usage
+//!
+//! ```bash
+//! # Basic usage - clean current directory
+//! clean-dev-dirs
+//!
+//! # Clean with filters
+//! clean-dev-dirs --keep-size 100MB --keep-days 30
+//!
+//! # Interactive mode
+//! clean-dev-dirs --interactive
+//! ```
+
+mod cleaner;
 mod cli;
 mod project;
 mod scanner;
@@ -5,14 +37,19 @@ mod scanner;
 use anyhow::{Ok, Result};
 use chrono::{DateTime, Local};
 use clap::Parser;
+use cleaner::Cleaner;
 use cli::{Cli, FilterOptions};
 use colored::Colorize;
-use humansize::{DECIMAL, format_size};
+use humansize::{format_size, DECIMAL};
 use project::{Project, Projects};
 use rayon::prelude::*;
 use scanner::Scanner;
 use std::{fs, process::exit};
 
+/// Entry point for the clean-dev-dirs application.
+///
+/// This function handles all errors gracefully by calling [`inner_main`] and printing
+/// any errors to stderr before exiting with a non-zero status code.
 fn main() {
     if let Err(err) = inner_main() {
         eprintln!("Error: {err}");
@@ -21,6 +58,28 @@ fn main() {
     }
 }
 
+/// Main application logic that can return errors.
+///
+/// This function:
+/// 1. Parses command-line arguments
+/// 2. Configures the thread pool for parallel processing
+/// 3. Scans the specified directory for development projects
+/// 4. Filters projects based on user criteria
+/// 5. Either performs a dry run, interactive selection, or automatic cleaning
+///
+/// # Returns
+///
+/// - `Ok(())` if the operation completed successfully
+/// - `Err(anyhow::Error)` if any error occurred during execution
+///
+/// # Errors
+///
+/// This function can return errors from:
+/// - Thread pool configuration
+/// - Directory scanning
+/// - Project filtering
+/// - Interactive selection
+/// - File system operations during cleaning
 fn inner_main() -> Result<()> {
     let args = Cli::parse();
 
@@ -31,20 +90,13 @@ fn inner_main() -> Result<()> {
     let scan_options = args.scan_options();
     let filter_options = args.filter_options();
 
-    println!("Cleaning directory: {}", dir.display());
-    println!("Project filter: {project_filter:?}");
-    println!("Execution options: {execution_options:?}");
-
     if scan_options.threads > 0 {
         rayon::ThreadPoolBuilder::new()
             .num_threads(scan_options.threads)
-            .build_global()
-            .unwrap();
+            .build_global()?;
     }
 
-    let scanner = Scanner::new(scan_options.verbose, scan_options.skip, project_filter);
-
-    println!("Scanner: {scanner:?}");
+    let scanner = Scanner::new(scan_options, project_filter);
 
     let projects = scanner.scan_directory(dir);
 
@@ -93,9 +145,40 @@ fn inner_main() -> Result<()> {
         return Ok(());
     }
 
+    Cleaner::clean_projects(projects);
+
     Ok(())
 }
 
+/// Parse a human-readable size string into bytes.
+///
+/// Supports both decimal (KB, MB, GB) and binary (KiB, MiB, GiB) units,
+/// as well as decimal numbers (e.g., "1.5GB").
+///
+/// # Arguments
+///
+/// * `size_str` - A string representing the size (e.g., "100MB", "1.5GiB", "1,000,000")
+///
+/// # Returns
+///
+/// - `Ok(u64)` - The size in bytes
+/// - `Err(anyhow::Error)` - If the string format is invalid or causes overflow
+///
+/// # Examples
+///
+/// ```
+/// # use anyhow::Result;
+/// # fn parse_size(size_str: &str) -> Result<u64> { Ok(0) } // Mock for doc test
+/// assert_eq!(parse_size("100KB")?, 100_000);
+/// assert_eq!(parse_size("1.5MB")?, 1_500_000);
+/// assert_eq!(parse_size("1GiB")?, 1_073_741_824);
+/// ```
+///
+/// # Supported Units
+///
+/// - **Decimal**: KB (1000), MB (1000²), GB (1000³)
+/// - **Binary**: KiB (1024), MiB (1024²), GiB (1024³)
+/// - **Bytes**: Plain numbers without units
 fn parse_size(size_str: &str) -> Result<u64> {
     if size_str == "0" {
         return Ok(0);
@@ -173,6 +256,34 @@ fn parse_size(size_str: &str) -> Result<u64> {
     }
 }
 
+/// Filter projects based on size and modification time criteria.
+///
+/// This function applies parallel filtering to remove projects that don't meet
+/// the specified criteria:
+/// - Projects smaller than the minimum size threshold
+/// - Projects modified more recently than the specified number of days
+///
+/// # Arguments
+///
+/// * `projects` - Vector of projects to filter
+/// * `filter_opts` - Filtering options containing size and time criteria
+///
+/// # Returns
+///
+/// - `Ok(Vec<Project>)` - Filtered list of projects that meet all criteria
+/// - `Err(anyhow::Error)` - If size parsing fails, or file system errors occur
+///
+/// # Examples
+///
+/// ```
+/// # use crate::{Project, FilterOptions};
+/// # fn filter_projects(projects: Vec<Project>, opts: &FilterOptions) -> anyhow::Result<Vec<Project>> { Ok(vec![]) }
+/// let filter_opts = FilterOptions {
+///     keep_size: "100MB".to_string(),
+///     keep_days: 30,
+/// };
+/// let filtered = filter_projects(projects, &filter_opts)?;
+/// ```
 fn filter_projects(projects: Vec<Project>, filter_opts: &FilterOptions) -> Result<Vec<Project>> {
     let keep_size_bytes = parse_size(&filter_opts.keep_size)?;
     let keep_days = filter_opts.keep_days;
@@ -185,10 +296,10 @@ fn filter_projects(projects: Vec<Project>, filter_opts: &FilterOptions) -> Resul
                 return false;
             }
 
-            // Days filter
+            // Day filter
             if keep_days > 0 {
-                if let core::result::Result::Ok(metadata) = fs::metadata(&project.build_arts.path) {
-                    if let core::result::Result::Ok(modified) = metadata.modified() {
+                if let Result::Ok(metadata) = fs::metadata(&project.build_arts.path) {
+                    if let Result::Ok(modified) = metadata.modified() {
                         let modified_time: DateTime<Local> = modified.into();
                         let days_ago = Local::now() - chrono::Duration::days(i64::from(keep_days));
 
