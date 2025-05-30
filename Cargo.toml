@@ -1,15 +1,22 @@
 [package]
-name = "clean-dev-dirs"
-version = "2.0.0"
-edition = "2024"
-description = "A fast CLI tool for recursively cleaning Rust target/ and Node.js node_modules/ directories to reclaim disk space"
-readme = "README.md"
-homepage = "https://github.com/TomPlanche/clean-dev-dirs"
-repository = "https://github.com/TomPlanche/clean-dev-dirs"
-license = "Apache-2.0 OR MIT"
-keywords = ["cli", "cleanup", "rust", "nodejs", "disk-space"]
-categories = ["command-line-utilities", "filesystem"]
 authors = ["Tom Planche <tomplanche@proton.me>"]
+categories = ["command-line-utilities", "filesystem"]
+description = "A fast CLI tool for recursively cleaning Rust target/ and Node.js node_modules/ directories to reclaim disk space"
+edition = "2024"
+homepage = "https://github.com/TomPlanche/clean-dev-dirs"
+include = [
+    "/Cargo.toml",
+    "/LICENSE-APACHE",
+    "/LICENSE-MIT",
+    "/README.md",
+    "/src/**",
+]
+keywords = ["cli", "cleanup", "rust", "nodejs", "disk-space"]
+license = "Apache-2.0 OR MIT"
+name = "clean-dev-dirs"
+readme = "README.md"
+repository = "https://github.com/TomPlanche/clean-dev-dirs"
+version = "2.0.1"
 
 [lib]
 name = "clean_dev_dirs"
