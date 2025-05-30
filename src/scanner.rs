@@ -547,18 +547,9 @@ impl Scanner {
     fn should_scan_entry(&self, entry: &DirEntry) -> bool {
         let path = entry.path();
 
-        // Skip directories in the skip list
-        for skip in &self.scan_options.skip {
-            // Check if the path contains any of the skip directories as a component
-            if path.components().any(|component| {
-                if let Some(name) = component.as_os_str().to_str() {
-                    name == skip.to_string_lossy()
-                } else {
-                    false
-                }
-            }) {
-                return false;
-            }
+        // Early return if path is in skip list
+        if self.is_path_in_skip_list(path) {
+            return false;
         }
 
         // Skip any directory inside a node_modules directory
@@ -570,13 +561,35 @@ impl Scanner {
         }
 
         // Skip hidden directories (except .cargo for Rust)
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('.') && name != ".cargo" {
-                return false;
-            }
+        if Self::is_hidden_directory_to_skip(path) {
+            return false;
         }
 
         // Skip common non-project directories
+        !Self::is_excluded_directory(path)
+    }
+
+    /// Check if a path is in the skip list
+    fn is_path_in_skip_list(&self, path: &Path) -> bool {
+        self.scan_options.skip.iter().any(|skip| {
+            path.components().any(|component| {
+                component
+                    .as_os_str()
+                    .to_str()
+                    .is_some_and(|name| name == skip.to_string_lossy())
+            })
+        })
+    }
+
+    /// Check if directory is hidden and should be skipped
+    fn is_hidden_directory_to_skip(path: &Path) -> bool {
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|name| name.starts_with('.') && name != ".cargo")
+    }
+
+    /// Check if directory is in the excluded list
+    fn is_excluded_directory(path: &Path) -> bool {
         let excluded_dirs = [
             "target",
             "build",
@@ -592,21 +605,17 @@ impl Scanner {
             ".env",
             "temp",
             "tmp",
-            "vendor",        // Go vendor directory
-            ".pytest_cache", // Python pytest cache
-            ".tox",          // Python tox environments
-            ".eggs",         // Python setuptools
-            ".coverage",     // Python coverage files
-            "node_modules",  // Node.js modules (already handled above but added for completeness)
+            "vendor",
+            ".pytest_cache",
+            ".tox",
+            ".eggs",
+            ".coverage",
+            "node_modules",
         ];
 
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if excluded_dirs.contains(&name) {
-                return false;
-            }
-        }
-
-        true
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|name| excluded_dirs.contains(&name))
     }
 
     /// Detect a Python project in the specified directory.
@@ -769,67 +778,97 @@ impl Scanner {
         path: &Path,
         errors: &Arc<Mutex<Vec<String>>>,
     ) -> Option<String> {
-        // Try pyproject.toml first
+        // Try files in order of preference
+        self.try_extract_from_pyproject_toml(path, errors)
+            .or_else(|| self.try_extract_from_setup_py(path, errors))
+            .or_else(|| self.try_extract_from_setup_cfg(path, errors))
+            .or_else(|| Self::fallback_to_directory_name(path))
+    }
+
+    /// Try to extract project name from pyproject.toml
+    fn try_extract_from_pyproject_toml(
+        &self,
+        path: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<String> {
         let pyproject_toml = path.join("pyproject.toml");
-
-        if pyproject_toml.exists() {
-            if let Some(content) = self.read_file_content(&pyproject_toml, errors) {
-                // Look for [project] name = "..." or [tool.poetry] name = "..."
-                for line in content.lines() {
-                    let line = line.trim();
-
-                    if line.starts_with("name") && line.contains('=') {
-                        if let Some(name) = Self::extract_quoted_value(line) {
-                            return Some(name);
-                        }
-                    }
-                }
-            }
+        if !pyproject_toml.exists() {
+            return None;
         }
 
-        // Try setup.py
+        let content = self.read_file_content(&pyproject_toml, errors)?;
+        Self::extract_name_from_toml_like_content(&content)
+    }
+
+    /// Try to extract project name from setup.py
+    fn try_extract_from_setup_py(
+        &self,
+        path: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<String> {
         let setup_py = path.join("setup.py");
-
-        if setup_py.exists() {
-            if let Some(content) = self.read_file_content(&setup_py, errors) {
-                // Look for name="..." or name='...'
-                for line in content.lines() {
-                    let line = line.trim();
-
-                    if line.contains("name") && line.contains('=') {
-                        if let Some(name) = Self::extract_quoted_value(line) {
-                            return Some(name);
-                        }
-                    }
-                }
-            }
+        if !setup_py.exists() {
+            return None;
         }
 
-        // Try setup.cfg
+        let content = self.read_file_content(&setup_py, errors)?;
+        Self::extract_name_from_python_content(&content)
+    }
+
+    /// Try to extract project name from setup.cfg
+    fn try_extract_from_setup_cfg(
+        &self,
+        path: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<String> {
         let setup_cfg = path.join("setup.cfg");
+        if !setup_cfg.exists() {
+            return None;
+        }
 
-        if setup_cfg.exists() {
-            if let Some(content) = self.read_file_content(&setup_cfg, errors) {
-                let mut in_metadata_section = false;
+        let content = self.read_file_content(&setup_cfg, errors)?;
+        Self::extract_name_from_cfg_content(&content)
+    }
 
-                for line in content.lines() {
-                    let line = line.trim();
+    /// Extract name from TOML-like content (pyproject.toml)
+    fn extract_name_from_toml_like_content(content: &str) -> Option<String> {
+        content
+            .lines()
+            .map(str::trim)
+            .find(|line| line.starts_with("name") && line.contains('='))
+            .and_then(Self::extract_quoted_value)
+    }
 
-                    if line == "[metadata]" {
-                        in_metadata_section = true;
-                    } else if line.starts_with('[') && line.ends_with(']') {
-                        in_metadata_section = false;
-                    } else if in_metadata_section && line.starts_with("name") && line.contains('=')
-                    {
-                        if let Some(name) = line.split('=').nth(1) {
-                            return Some(name.trim().to_string());
-                        }
-                    }
-                }
+    /// Extract name from Python content (setup.py)
+    fn extract_name_from_python_content(content: &str) -> Option<String> {
+        content
+            .lines()
+            .map(str::trim)
+            .find(|line| line.contains("name") && line.contains('='))
+            .and_then(Self::extract_quoted_value)
+    }
+
+    /// Extract name from INI-style configuration content (setup.cfg)
+    fn extract_name_from_cfg_content(content: &str) -> Option<String> {
+        let mut in_metadata_section = false;
+
+        for line in content.lines() {
+            let line = line.trim();
+
+            if line == "[metadata]" {
+                in_metadata_section = true;
+            } else if line.starts_with('[') && line.ends_with(']') {
+                in_metadata_section = false;
+            } else if in_metadata_section && line.starts_with("name") && line.contains('=') {
+                return line.split('=').nth(1).map(|name| name.trim().to_string());
             }
         }
 
-        // Fallback to directory name
+        None
+    }
+
+    /// Fallback to directory name
+    fn fallback_to_directory_name(path: &Path) -> Option<String> {
         path.file_name()
             .and_then(|name| name.to_str())
             .map(std::string::ToString::to_string)
