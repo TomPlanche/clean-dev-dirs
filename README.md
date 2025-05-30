@@ -157,6 +157,117 @@ The tool provides colored, human-readable output including:
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+### 🔧 Adding Language Support
+
+Want to add support for a new programming language? Here's how to extend `clean-dev-dirs`:
+
+#### 1. **Update Project Types**
+
+First, add your language to the `ProjectType` enum in `src/project/project.rs`:
+
+```rust
+#[derive(Clone, PartialEq)]
+pub(crate) enum ProjectType {
+    Rust,
+    Node,
+    Python,
+    Go,
+    YourLanguage, // Add your language here
+}
+```
+
+Don't forget to update the `Display` implementation to include an appropriate emoji and name.
+
+#### 2. **Add CLI Filter Option**
+
+Update `src/cli.rs` to add a command-line flag for your language:
+
+```rust
+struct ProjectTypeArgs {
+    // ... existing flags ...
+    
+    /// Clean only YourLanguage projects
+    #[arg(long, conflicts_with_all = ["rust_only", "node_only", "python_only", "go_only"])]
+    your_language_only: bool,
+}
+```
+
+Also update the `ProjectFilter` enum and `project_filter()` method accordingly.
+
+#### 3. **Implement Project Detection**
+
+Add detection logic in `src/scanner.rs` by implementing:
+
+- **Detection method**: `detect_your_language_project()` - identifies projects by looking for characteristic files
+- **Name extraction**: `extract_your_language_project_name()` - parses project configuration files to get the name
+- **Integration**: Update `detect_project()` to call your detection method
+
+**Example detection criteria:**
+```rust
+fn detect_your_language_project(&self, path: &Path, errors: &Arc<Mutex<Vec<String>>>) -> Option<Project> {
+    let config_file = path.join("your_config.conf");  // Language-specific config file
+    let build_dir = path.join("build");               // Build/cache directory to clean
+    
+    if config_file.exists() && build_dir.exists() {
+        let name = self.extract_your_language_project_name(&config_file, errors);
+        
+        let build_arts = BuildArtifacts {
+            path: build_dir,
+            size: 0, // Will be calculated later
+        };
+        
+        return Some(Project::new(
+            ProjectType::YourLanguage,
+            path.to_path_buf(),
+            build_arts,
+            name,
+        ));
+    }
+    
+    None
+}
+```
+
+#### 4. **Update Directory Exclusions**
+
+Add any language-specific directories that should be skipped during scanning to the `should_scan_entry()` method in `src/scanner.rs`.
+
+#### 5. **Update Documentation**
+
+- Add your language to the "Project Detection" section in this README
+- Update the CLI help text descriptions
+- Add an example in the usage section
+
+#### 6. **Testing Considerations**
+
+Consider these when testing your implementation:
+
+- **Multiple config files**: Some languages have different project file formats
+- **Build directory variations**: Different build tools may use different directory names
+- **Name extraction edge cases**: Handle malformed or missing project names gracefully
+- **Performance**: Ensure detection doesn't significantly slow down scanning
+
+#### 7. **Example Languages to Add**
+
+Some languages that would be great additions:
+
+- **C/C++**: Look for `CMakeLists.txt`/`Makefile` + `build/` or `cmake-build-*/`
+- **Java**: Look for `pom.xml`/`build.gradle` + `target/` or `build/`
+- **C#**: Look for `*.csproj`/`*.sln` + `bin/`/`obj/`
+- **PHP**: Look for `composer.json` + `vendor/`
+- **Ruby**: Look for `Gemfile` + `vendor/bundle/`
+- **Swift**: Look for `Package.swift` + `.build/`
+
+#### 8. **Pull Request Guidelines**
+
+When submitting your language support:
+
+1. **Test thoroughly**: Verify detection works with real projects
+2. **Add examples**: Include sample project structures in your PR description  
+3. **Update help text**: Ensure all user-facing text is clear and consistent
+4. **Follow patterns**: Use the same patterns as existing language implementations
+5. **Consider edge cases**: Handle projects with unusual structures gracefully
+
 ## 📄 License
 
 This project is dual-licensed under either:
