@@ -1,8 +1,6 @@
 # 🧹clean-dev-dirs
 
-<h1 align="center">
-    A fast and efficient CLI tool for recursively cleaning Rust `target/` and Node.js `node_modules/` directories to reclaim disk space.
-</h1>
+> A fast and efficient CLI tool for recursively cleaning Rust `target/` and Node.js `node_modules/` directories to reclaim disk space.
 
 <p align="center">
   <a href="https://crates.io/crates/clean-dev-dirs"><img src="https://img.shields.io/crates/v/clean-dev-dirs.svg" alt="Crates.io Version"></a>
@@ -10,7 +8,6 @@
   <a href="https://sonarcloud.io/summary/new_code?id=TomPlanche_clean-dev-dirs"><img src="https://sonarcloud.io/api/project_badges/measure?project=TomPlanche_clean-dev-dirs&metric=sqale_rating" alt="SonarCloud SQALE Rating"></a>
   <a href="https://sonarcloud.io/summary/new_code?id=TomPlanche_clean-dev-dirs"><img src="https://sonarcloud.io/api/project_badges/measure?project=TomPlanche_clean-dev-dirs&metric=security_rating" alt="SonarCloud Security Rating"></a>
   <a href="https://github.com/TomPlanche/clean-dev-dirs/blob/main/LICENSE"><img src="https://img.shields.io/crates/l/clean-dev-dirs" alt="License"></a>
-  <a href="https://github.com/TomPlanche/clean-dev-dirs/actions/workflows/rust.yaml"><img src="https://github.com/TomPlanche/clean-dev-dirs/actions/workflows/rust.yaml/badge.svg" alt="Build Status"></a>
 </p>
 
 ## 🚀 Features
