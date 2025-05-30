@@ -12,6 +12,15 @@ A fast and efficient CLI tool for recursively cleaning Rust `target/` and Node.j
 - **Progress indicators**: Real-time feedback during scanning and cleaning operations
 - **Detailed statistics**: See total space that can be reclaimed before cleaning
 
+## 💡 Inspiration
+
+This project is inspired by [cargo-clean-all](https://github.com/dnlmlr/cargo-clean-all), a Rust-specific tool for
+cleaning cargo projects. I've improved upon the original concept with:
+
+- **Multi-language support**: Extended beyond Rust to support Node.js projects
+- **Parallel scanning**: Significantly faster directory traversal using multithreading
+- **Cleaner code architecture**: Well-structured, modular codebase for better maintainability
+
 ## 📦 Installation
 
 ### From Source
@@ -77,21 +86,20 @@ clean-dev-dirs --skip node_modules --skip .git
 # Non-interactive mode (auto-confirm)
 clean-dev-dirs --yes
 ```
-
 ## 📋 Command Line Options
 
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--keep-size` | `-s` | Ignore projects with build dir smaller than specified size |
-| `--keep-days` | `-d` | Ignore projects modified in the last N days |
-| `--rust-only` | | Clean only Rust projects |
-| `--node-only` | | Clean only Node.js projects |
-| `--yes` | `-y` | Don't ask for confirmation; clean all detected projects |
-| `--dry-run` | | List cleanable projects without actually cleaning |
-| `--interactive` | `-i` | Use interactive project selection |
-| `--threads` | `-t` | Number of threads for directory scanning |
-| `--verbose` | `-v` | Show access errors during scanning |
-| `--skip` | | Directories to skip during scanning |
+| Option          | Short | Description                                                |
+|-----------------|-------|------------------------------------------------------------|
+| `--keep-size`   | `-s`  | Ignore projects with build dir smaller than specified size |
+| `--keep-days`   | `-d`  | Ignore projects modified in the last N days                |
+| `--rust-only`   |       | Clean only Rust projects                                   |
+| `--node-only`   |       | Clean only Node.js projects                                |
+| `--yes`         | `-y`  | Don't ask for confirmation; clean all detected projects    |
+| `--dry-run`     |       | List cleanable projects without actually cleaning          |
+| `--interactive` | `-i`  | Use interactive project selection                          |
+| `--threads`     | `-t`  | Number of threads for directory scanning                   |
+| `--verbose`     | `-v`  | Show access errors during scanning                         |
+| `--skip`        |       | Directories to skip during scanning                        |
 
 ## 🎯 Size Formats
 
@@ -131,7 +139,12 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is dual-licensed under either:
+
+- **MIT License** - see the [LICENSE-MIT](LICENSE-MIT) file for details
+- **Apache License 2.0** - see the [LICENSE-APACHE](LICENSE-APACHE) file for details
+
+You may choose either license at your option.
 
 ## 🙏 Acknowledgments
 
