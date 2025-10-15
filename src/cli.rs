@@ -8,6 +8,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use clean_dev_dirs::config::{ExecutionOptions, FilterOptions, ProjectFilter, ScanOptions};
+
 /// Command-line arguments for filtering projects during cleanup.
 ///
 /// These options control which projects are considered for cleaning based on
@@ -60,43 +62,6 @@ struct ExecutionArgs {
     interactive: bool,
 }
 
-/// Command-line arguments for filtering projects by type.
-///
-/// These options restrict cleaning to specific project types. The arguments
-/// are mutually exclusive to prevent conflicting selections.
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Parser)]
-struct ProjectTypeArgs {
-    /// Clean only Rust projects
-    ///
-    /// When enabled, only directories containing `Cargo.toml` and `target/`
-    /// will be considered for cleanup.
-    #[arg(long, conflicts_with_all = ["node_only", "python_only", "go_only"])]
-    rust_only: bool,
-
-    /// Clean only Node.js projects
-    ///
-    /// When enabled, only directories containing `package.json` and `node_modules/`
-    /// will be considered for cleanup.
-    #[arg(long, conflicts_with_all = ["rust_only", "python_only", "go_only"])]
-    node_only: bool,
-
-    /// Clean only Python projects
-    ///
-    /// When enabled, only directories containing Python configuration files
-    /// (requirements.txt, setup.py, pyproject.toml) and cache directories
-    /// (`__pycache__`, `.pytest_cache`, venv, .venv) will be considered for cleanup.
-    #[arg(long, conflicts_with_all = ["rust_only", "node_only", "go_only"])]
-    python_only: bool,
-
-    /// Clean only Go projects
-    ///
-    /// When enabled, only directories containing `go.mod` and `vendor/`
-    /// will be considered for cleanup.
-    #[arg(long, conflicts_with_all = ["rust_only", "node_only", "python_only"])]
-    go_only: bool,
-}
-
 /// Command-line arguments for controlling directory scanning behavior.
 ///
 /// These options affect how directories are traversed and what information
@@ -139,17 +104,22 @@ struct ScanningArgs {
 #[derive(Parser)]
 #[command(name = "clean-dev-dirs")]
 #[command(about = "Recursively clean Rust, Node.js, Python, and Go development directories")]
-pub(crate) struct Cli {
+#[command(version)]
+#[command(author)]
+pub struct Cli {
     /// The directory to search for projects
     ///
     /// Specifies the root directory where the tool will recursively search for
     /// development projects. Defaults to the current directory if not specified.
     #[arg(default_value = ".")]
-    pub(crate) dir: PathBuf,
+    pub dir: PathBuf,
 
-    /// Project type to clean
-    #[command(flatten)]
-    project_type: ProjectTypeArgs,
+    /// Project type to clean (all, rust, node, python, go)
+    ///
+    /// Restricts cleaning to specific project types. If not specified, all
+    /// supported project types will be considered.
+    #[arg(short = 'p', long, default_value = "all")]
+    project_type: ProjectFilter,
 
     /// Execution options
     #[command(flatten)]
@@ -164,107 +134,26 @@ pub(crate) struct Cli {
     scanning: ScanningArgs,
 }
 
-/// Configuration for cleanup execution behavior.
-///
-/// This struct provides a simplified interface to execution-related options,
-/// extracted from the command-line arguments.
-#[allow(dead_code)]
-#[derive(Clone)]
-pub(crate) struct ExecutionOptions {
-    /// Whether to run in dry-run mode (no actual deletion)
-    pub(crate) dry_run: bool,
-
-    /// Whether to use interactive project selection
-    pub(crate) interactive: bool,
-}
-
-/// Configuration for project filtering criteria.
-///
-/// This struct contains the filtering options used to determine which projects
-/// should be considered for cleanup based on size and modification time.
-#[derive(Clone)]
-pub struct FilterOptions {
-    /// Minimum size threshold for build directories
-    pub keep_size: String,
-
-    /// Minimum age in days for projects to be considered
-    pub keep_days: u32,
-}
-
-/// Enumeration of supported project type filters.
-///
-/// This enum is used to restrict scanning and cleaning to specific types of
-/// development projects.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum ProjectFilter {
-    /// Include all supported project types (Rust, Node.js, Python, Go)
-    All,
-
-    /// Include only Rust projects (Cargo.toml + target/)
-    RustOnly,
-
-    /// Include only Node.js projects (package.json + `node_modules`/)
-    NodeOnly,
-
-    /// Include only Python projects (Python config files + cache dirs)
-    PythonOnly,
-
-    /// Include only Go projects (go.mod + vendor/)
-    GoOnly,
-}
-
-/// Configuration for directory scanning behavior.
-///
-/// This struct contains options that control how directories are traversed
-/// and what information is collected during the scanning process.
-#[derive(Clone)]
-pub struct ScanOptions {
-    /// Whether to show verbose output including scan errors
-    pub verbose: bool,
-
-    /// Number of threads to use for scanning (0 = default)
-    pub threads: usize,
-
-    /// List of directory patterns to skip during scanning
-    pub skip: Vec<PathBuf>,
-}
-
 impl Cli {
     /// Extract project filter from command-line arguments.
     ///
-    /// This method analyzes the project type flags and returns the appropriate
-    /// filter enum value. Only one project type can be selected at a time due
-    /// to the `conflicts_with_all` constraints in the argument definitions.
+    /// This method returns the project type filter specified by the user.
     ///
     /// # Returns
     ///
-    /// - `ProjectFilter::RustOnly` if `--rust-only` is specified
-    /// - `ProjectFilter::NodeOnly` if `--node-only` is specified
-    /// - `ProjectFilter::PythonOnly` if `--python-only` is specified
-    /// - `ProjectFilter::GoOnly` if `--go-only` is specified
-    /// - `ProjectFilter::All` if no specific project type is specified
+    /// The `ProjectFilter` enum value from the CLI arguments.
     ///
     /// # Examples
     ///
     /// ```no_run
     /// # use clap::Parser;
-    /// # use crate::cli::{Cli, ProjectFilter};
-    /// let args = Cli::parse_from(&["clean-dev-dirs", "--rust-only"]);
-    /// assert_eq!(args.project_filter(), ProjectFilter::RustOnly);
+    /// # use clean_dev_dirs::cli::Cli;
+    /// # use clean_dev_dirs::config::ProjectFilter;
+    /// let args = Cli::parse_from(&["clean-dev-dirs", "--project-type", "rust"]);
+    /// assert_eq!(args.project_filter(), ProjectFilter::Rust);
     /// ```
-    #[allow(dead_code)]
-    pub(crate) fn project_filter(&self) -> ProjectFilter {
-        if self.project_type.rust_only {
-            ProjectFilter::RustOnly
-        } else if self.project_type.node_only {
-            ProjectFilter::NodeOnly
-        } else if self.project_type.python_only {
-            ProjectFilter::PythonOnly
-        } else if self.project_type.go_only {
-            ProjectFilter::GoOnly
-        } else {
-            ProjectFilter::All
-        }
+    pub fn project_filter(&self) -> ProjectFilter {
+        self.project_type
     }
 
     /// Extract execution options from command-line arguments.
@@ -281,14 +170,13 @@ impl Cli {
     ///
     /// ```no_run
     /// # use clap::Parser;
-    /// # use crate::cli::Cli;
+    /// # use clean_dev_dirs::cli::Cli;
     /// let args = Cli::parse_from(&["clean-dev-dirs", "--dry-run", "--interactive"]);
     /// let options = args.execution_options();
     /// assert!(options.dry_run);
     /// assert!(options.interactive);
     /// ```
-    #[allow(dead_code)]
-    pub(crate) fn execution_options(&self) -> ExecutionOptions {
+    pub fn execution_options(&self) -> ExecutionOptions {
         ExecutionOptions {
             dry_run: self.execution.dry_run,
             interactive: self.execution.interactive,
@@ -309,14 +197,13 @@ impl Cli {
     ///
     /// ```no_run
     /// # use clap::Parser;
-    /// # use crate::cli::Cli;
+    /// # use clean_dev_dirs::cli::Cli;
     /// let args = Cli::parse_from(&["clean-dev-dirs", "--verbose", "--threads", "4"]);
     /// let options = args.scan_options();
     /// assert!(options.verbose);
     /// assert_eq!(options.threads, 4);
     /// ```
-    #[allow(dead_code)]
-    pub(crate) fn scan_options(&self) -> ScanOptions {
+    pub fn scan_options(&self) -> ScanOptions {
         ScanOptions {
             verbose: self.scanning.verbose,
             threads: self.scanning.threads,
@@ -338,14 +225,13 @@ impl Cli {
     ///
     /// ```no_run
     /// # use clap::Parser;
-    /// # use crate::cli::Cli;
+    /// # use clean_dev_dirs::cli::Cli;
     /// let args = Cli::parse_from(&["clean-dev-dirs", "--keep-size", "100MB", "--keep-days", "30"]);
     /// let options = args.filter_options();
     /// assert_eq!(options.keep_size, "100MB");
     /// assert_eq!(options.keep_days, 30);
     /// ```
-    #[allow(dead_code)]
-    pub(crate) fn filter_options(&self) -> FilterOptions {
+    pub fn filter_options(&self) -> FilterOptions {
         FilterOptions {
             keep_size: self.filtering.keep_size.clone(),
             keep_days: self.filtering.keep_days,
@@ -381,20 +267,26 @@ mod tests {
 
     #[test]
     fn test_project_filters() {
-        let rust_args = Cli::parse_from(["clean-dev-dirs", "--rust-only"]);
-        assert_eq!(rust_args.project_filter(), ProjectFilter::RustOnly);
+        let rust_args = Cli::parse_from(["clean-dev-dirs", "--project-type", "rust"]);
+        assert_eq!(rust_args.project_filter(), ProjectFilter::Rust);
 
-        let node_args = Cli::parse_from(["clean-dev-dirs", "--node-only"]);
-        assert_eq!(node_args.project_filter(), ProjectFilter::NodeOnly);
+        let node_args = Cli::parse_from(["clean-dev-dirs", "--project-type", "node"]);
+        assert_eq!(node_args.project_filter(), ProjectFilter::Node);
 
-        let python_args = Cli::parse_from(["clean-dev-dirs", "--python-only"]);
-        assert_eq!(python_args.project_filter(), ProjectFilter::PythonOnly);
+        let python_args = Cli::parse_from(["clean-dev-dirs", "--project-type", "python"]);
+        assert_eq!(python_args.project_filter(), ProjectFilter::Python);
 
-        let go_args = Cli::parse_from(["clean-dev-dirs", "--go-only"]);
-        assert_eq!(go_args.project_filter(), ProjectFilter::GoOnly);
+        let go_args = Cli::parse_from(["clean-dev-dirs", "--project-type", "go"]);
+        assert_eq!(go_args.project_filter(), ProjectFilter::Go);
 
         let all_args = Cli::parse_from(["clean-dev-dirs"]);
         assert_eq!(all_args.project_filter(), ProjectFilter::All);
+    }
+
+    #[test]
+    fn test_project_filter_short_flag() {
+        let rust_args = Cli::parse_from(["clean-dev-dirs", "-p", "rust"]);
+        assert_eq!(rust_args.project_filter(), ProjectFilter::Rust);
     }
 
     #[test]
@@ -446,66 +338,6 @@ mod tests {
     fn test_custom_directory() {
         let args = Cli::parse_from(["clean-dev-dirs", "/custom/path"]);
         assert_eq!(args.dir, PathBuf::from("/custom/path"));
-    }
-
-    #[test]
-    fn test_project_filter_equality() {
-        assert_eq!(ProjectFilter::All, ProjectFilter::All);
-        assert_eq!(ProjectFilter::RustOnly, ProjectFilter::RustOnly);
-        assert_eq!(ProjectFilter::NodeOnly, ProjectFilter::NodeOnly);
-        assert_eq!(ProjectFilter::PythonOnly, ProjectFilter::PythonOnly);
-        assert_eq!(ProjectFilter::GoOnly, ProjectFilter::GoOnly);
-
-        assert_ne!(ProjectFilter::All, ProjectFilter::RustOnly);
-        assert_ne!(ProjectFilter::RustOnly, ProjectFilter::NodeOnly);
-        assert_ne!(ProjectFilter::NodeOnly, ProjectFilter::PythonOnly);
-        assert_ne!(ProjectFilter::PythonOnly, ProjectFilter::GoOnly);
-    }
-
-    #[test]
-    fn test_execution_options_clone() {
-        let original = ExecutionOptions {
-            dry_run: true,
-            interactive: false,
-        };
-        let cloned = original.clone();
-
-        assert_eq!(original.dry_run, cloned.dry_run);
-        assert_eq!(original.interactive, cloned.interactive);
-    }
-
-    #[test]
-    fn test_filter_options_clone() {
-        let original = FilterOptions {
-            keep_size: "100MB".to_string(),
-            keep_days: 30,
-        };
-        let cloned = original.clone();
-
-        assert_eq!(original.keep_size, cloned.keep_size);
-        assert_eq!(original.keep_days, cloned.keep_days);
-    }
-
-    #[test]
-    fn test_scan_options_clone() {
-        let original = ScanOptions {
-            verbose: true,
-            threads: 4,
-            skip: vec![PathBuf::from("test")],
-        };
-        let cloned = original.clone();
-
-        assert_eq!(original.verbose, cloned.verbose);
-        assert_eq!(original.threads, cloned.threads);
-        assert_eq!(original.skip, cloned.skip);
-    }
-
-    #[test]
-    fn test_project_filter_copy() {
-        let original = ProjectFilter::RustOnly;
-        let copied = original;
-
-        assert_eq!(original, copied);
     }
 
     #[test]
