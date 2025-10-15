@@ -64,8 +64,8 @@ struct ExecutionArgs {
 ///
 /// These options restrict cleaning to specific project types. The arguments
 /// are mutually exclusive to prevent conflicting selections.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Parser)]
-#[allow(clippy::struct_excessive_bools)] // This is acceptable here due to the nature of the CLI
 struct ProjectTypeArgs {
     /// Clean only Rust projects
     ///
@@ -168,8 +168,8 @@ pub(crate) struct Cli {
 ///
 /// This struct provides a simplified interface to execution-related options,
 /// extracted from the command-line arguments.
+#[allow(dead_code)]
 #[derive(Clone)]
-#[allow(dead_code)] // This is part of the public API
 pub(crate) struct ExecutionOptions {
     /// Whether to run in dry-run mode (no actual deletion)
     pub(crate) dry_run: bool,
@@ -252,7 +252,7 @@ impl Cli {
     /// let args = Cli::parse_from(&["clean-dev-dirs", "--rust-only"]);
     /// assert_eq!(args.project_filter(), ProjectFilter::RustOnly);
     /// ```
-    #[allow(dead_code)] // This is part of the public API
+    #[allow(dead_code)]
     pub(crate) fn project_filter(&self) -> ProjectFilter {
         if self.project_type.rust_only {
             ProjectFilter::RustOnly
@@ -287,7 +287,7 @@ impl Cli {
     /// assert!(options.dry_run);
     /// assert!(options.interactive);
     /// ```
-    #[allow(dead_code)] // This is part of the public API
+    #[allow(dead_code)]
     pub(crate) fn execution_options(&self) -> ExecutionOptions {
         ExecutionOptions {
             dry_run: self.execution.dry_run,
@@ -315,7 +315,7 @@ impl Cli {
     /// assert!(options.verbose);
     /// assert_eq!(options.threads, 4);
     /// ```
-    #[allow(dead_code)] // This is part of the public API
+    #[allow(dead_code)]
     pub(crate) fn scan_options(&self) -> ScanOptions {
         ScanOptions {
             verbose: self.scanning.verbose,
@@ -344,7 +344,7 @@ impl Cli {
     /// assert_eq!(options.keep_size, "100MB");
     /// assert_eq!(options.keep_days, 30);
     /// ```
-    #[allow(dead_code)] // This is part of the public API
+    #[allow(dead_code)]
     pub(crate) fn filter_options(&self) -> FilterOptions {
         FilterOptions {
             keep_size: self.filtering.keep_size.clone(),

@@ -20,6 +20,7 @@ use crate::project::{Project, Projects};
 /// The `Cleaner` struct provides methods for removing build directories
 /// (such as `target/` for Rust projects and `node_modules/` for Node.js projects)
 /// with parallel processing, progress reporting, and comprehensive error handling.
+#[allow(dead_code)]
 pub struct Cleaner;
 
 impl Cleaner {
@@ -36,6 +37,7 @@ impl Cleaner {
     /// let cleaner = Cleaner::new();
     /// ```
     #[must_use]
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self
     }
@@ -280,10 +282,10 @@ fn calculate_directory_size(path: &std::path::Path) -> u64 {
 
     for entry in walkdir::WalkDir::new(path) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file() {
-                if let Ok(metadata) = entry.metadata() {
-                    total_size += metadata.len();
-                }
+            if entry.file_type().is_file()
+                && let Ok(metadata) = entry.metadata()
+            {
+                total_size += metadata.len();
             }
         } else {
             // Skip errors for individual files
