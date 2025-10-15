@@ -6,8 +6,8 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use dialoguer::{MultiSelect, theme::ColorfulTheme};
 use humansize::{DECIMAL, format_size};
+use inquire::MultiSelect;
 use rayon::prelude::*;
 
 use crate::project::ProjectType;
@@ -183,15 +183,41 @@ impl Projects {
             })
             .collect();
 
-        let defaults = vec![true; self.0.len()];
+        let defaults: Vec<usize> = (0..self.0.len()).collect();
 
-        let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-            .with_prompt("Select projects to clean:")
-            .items(&items)
-            .defaults(&defaults)
-            .interact()?;
+        let selections = MultiSelect::new("Select projects to clean:", items)
+            .with_default(&defaults)
+            .prompt()?;
 
-        Ok(selections.into_iter().map(|i| self.0[i].clone()).collect())
+        // Find indices of selected items
+        let selected_indices: Vec<usize> = selections
+            .iter()
+            .filter_map(|selected_item| {
+                self.0
+                    .iter()
+                    .enumerate()
+                    .find(|(_, p)| {
+                        let icon = match p.kind {
+                            ProjectType::Rust => "🦀",
+                            ProjectType::Node => "📦",
+                            ProjectType::Python => "🐍",
+                            ProjectType::Go => "🐹",
+                        };
+                        let expected = format!(
+                            "{icon} {} ({})",
+                            p.root_path.display(),
+                            format_size(p.build_arts.size, DECIMAL)
+                        );
+                        &expected == selected_item
+                    })
+                    .map(|(i, _)| i)
+            })
+            .collect();
+
+        Ok(selected_indices
+            .into_iter()
+            .map(|i| self.0[i].clone())
+            .collect())
     }
 
     /// Get the number of projects in the collection.
