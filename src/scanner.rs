@@ -180,10 +180,10 @@ impl Scanner {
         for entry in WalkDir::new(path) {
             match entry {
                 Ok(entry) => {
-                    if entry.file_type().is_file() {
-                        if let Ok(metadata) = entry.metadata() {
-                            total_size += metadata.len();
-                        }
+                    if entry.file_type().is_file()
+                        && let Ok(metadata) = entry.metadata()
+                    {
+                        total_size += metadata.len();
                     }
                 }
                 Err(e) => {
@@ -282,40 +282,36 @@ impl Scanner {
         if matches!(
             self.project_filter,
             ProjectFilter::All | ProjectFilter::RustOnly
-        ) {
-            if let Some(project) = self.detect_rust_project(path, errors) {
-                return Some(project);
-            }
+        ) && let Some(project) = self.detect_rust_project(path, errors)
+        {
+            return Some(project);
         }
 
         // Check for a Node.js project
         if matches!(
             self.project_filter,
             ProjectFilter::All | ProjectFilter::NodeOnly
-        ) {
-            if let Some(project) = self.detect_node_project(path, errors) {
-                return Some(project);
-            }
+        ) && let Some(project) = self.detect_node_project(path, errors)
+        {
+            return Some(project);
         }
 
         // Check for a Python project
         if matches!(
             self.project_filter,
             ProjectFilter::All | ProjectFilter::PythonOnly
-        ) {
-            if let Some(project) = self.detect_python_project(path, errors) {
-                return Some(project);
-            }
+        ) && let Some(project) = self.detect_python_project(path, errors)
+        {
+            return Some(project);
         }
 
         // Check for a Go project
         if matches!(
             self.project_filter,
             ProjectFilter::All | ProjectFilter::GoOnly
-        ) {
-            if let Some(project) = self.detect_go_project(path, errors) {
-                return Some(project);
-            }
+        ) && let Some(project) = self.detect_go_project(path, errors)
+        {
+            return Some(project);
         }
 
         None
@@ -679,13 +675,13 @@ impl Scanner {
         for &dir_name in &build_dirs {
             let dir_path = path.join(dir_name);
 
-            if dir_path.exists() && dir_path.is_dir() {
-                if let Ok(size) = Self::calculate_directory_size(&dir_path) {
-                    if size > largest_size {
-                        largest_size = size;
-                        largest_build_dir = Some(dir_path);
-                    }
-                }
+            if dir_path.exists()
+                && dir_path.is_dir()
+                && let Ok(size) = Self::calculate_directory_size(&dir_path)
+                && size > largest_size
+            {
+                largest_size = size;
+                largest_build_dir = Some(dir_path);
             }
         }
 
