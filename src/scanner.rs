@@ -18,7 +18,7 @@ use serde_json::{Value, from_str};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    cli::{ProjectFilter, ScanOptions},
+    config::{ProjectFilter, ScanOptions},
     project::{BuildArtifacts, Project, ProjectType},
 };
 
@@ -281,7 +281,7 @@ impl Scanner {
         // Check for a Rust project
         if matches!(
             self.project_filter,
-            ProjectFilter::All | ProjectFilter::RustOnly
+            ProjectFilter::All | ProjectFilter::Rust
         ) && let Some(project) = self.detect_rust_project(path, errors)
         {
             return Some(project);
@@ -290,7 +290,7 @@ impl Scanner {
         // Check for a Node.js project
         if matches!(
             self.project_filter,
-            ProjectFilter::All | ProjectFilter::NodeOnly
+            ProjectFilter::All | ProjectFilter::Node
         ) && let Some(project) = self.detect_node_project(path, errors)
         {
             return Some(project);
@@ -299,17 +299,15 @@ impl Scanner {
         // Check for a Python project
         if matches!(
             self.project_filter,
-            ProjectFilter::All | ProjectFilter::PythonOnly
+            ProjectFilter::All | ProjectFilter::Python
         ) && let Some(project) = self.detect_python_project(path, errors)
         {
             return Some(project);
         }
 
         // Check for a Go project
-        if matches!(
-            self.project_filter,
-            ProjectFilter::All | ProjectFilter::GoOnly
-        ) && let Some(project) = self.detect_go_project(path, errors)
+        if matches!(self.project_filter, ProjectFilter::All | ProjectFilter::Go)
+            && let Some(project) = self.detect_go_project(path, errors)
         {
             return Some(project);
         }

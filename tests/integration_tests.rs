@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-use clean_dev_dirs::cli::{ProjectFilter, ScanOptions};
+use clean_dev_dirs::config::{ProjectFilter, ScanOptions};
 use clean_dev_dirs::project::{BuildArtifacts, ProjectType};
 use clean_dev_dirs::scanner::Scanner;
 
@@ -162,7 +162,7 @@ fn test_scanner_finds_rust_projects() {
         skip: vec![],
     };
 
-    let scanner = Scanner::new(scan_options, ProjectFilter::RustOnly);
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
     let projects = scanner.scan_directory(base_path);
 
     assert_eq!(projects.len(), 2);
@@ -190,7 +190,7 @@ fn test_scanner_finds_node_projects() {
         skip: vec![],
     };
 
-    let scanner = Scanner::new(scan_options, ProjectFilter::NodeOnly);
+    let scanner = Scanner::new(scan_options, ProjectFilter::Node);
     let projects = scanner.scan_directory(base_path);
 
     assert_eq!(projects.len(), 2);
@@ -218,7 +218,7 @@ fn test_scanner_finds_python_projects() {
         skip: vec![],
     };
 
-    let scanner = Scanner::new(scan_options, ProjectFilter::PythonOnly);
+    let scanner = Scanner::new(scan_options, ProjectFilter::Python);
     let projects = scanner.scan_directory(base_path);
 
     assert_eq!(projects.len(), 2);
@@ -245,7 +245,7 @@ fn test_scanner_finds_go_projects() {
         skip: vec![],
     };
 
-    let scanner = Scanner::new(scan_options, ProjectFilter::GoOnly);
+    let scanner = Scanner::new(scan_options, ProjectFilter::Go);
     let projects = scanner.scan_directory(base_path);
 
     assert_eq!(projects.len(), 2);
@@ -307,7 +307,7 @@ fn test_scanner_skips_directories() {
         skip: vec![PathBuf::from("skip-me"), PathBuf::from("target")],
     };
 
-    let scanner = Scanner::new(scan_options, ProjectFilter::RustOnly);
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
     let projects = scanner.scan_directory(base_path);
 
     // Should only find the top-level project, not the ones in skipped directories
@@ -333,7 +333,7 @@ fn test_scanner_calculates_build_directory_sizes() {
         skip: vec![],
     };
 
-    let scanner = Scanner::new(scan_options, ProjectFilter::RustOnly);
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
     let projects = scanner.scan_directory(base_path);
 
     assert_eq!(projects.len(), 1);
@@ -361,7 +361,7 @@ fn test_scanner_handles_empty_directories() {
         skip: vec![],
     };
 
-    let scanner = Scanner::new(scan_options, ProjectFilter::RustOnly);
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
     let projects = scanner.scan_directory(base_path);
 
     // Empty target directories should not be included (size = 0)
@@ -387,7 +387,7 @@ fn test_scanner_handles_missing_build_directories() {
         skip: vec![],
     };
 
-    let scanner = Scanner::new(scan_options, ProjectFilter::RustOnly);
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
     let projects = scanner.scan_directory(base_path);
 
     // Projects without build directories should not be found
