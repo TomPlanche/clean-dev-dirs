@@ -14,6 +14,14 @@ pub struct ExecutionOptions {
 
     /// Whether to use interactive project selection
     pub interactive: bool,
+
+    /// Whether to preserve compiled executables during cleanup
+    ///
+    /// When enabled, final executable binaries are preserved while
+    /// intermediate build artifacts are removed. This applies to:
+    /// - Rust: Preserves binaries in target/debug/ and target/release/
+    /// - Go: Preserves binaries in bin/ directory
+    pub keep_executables: bool,
 }
 
 #[cfg(test)]
@@ -25,10 +33,12 @@ mod tests {
         let exec_opts = ExecutionOptions {
             dry_run: true,
             interactive: false,
+            keep_executables: true,
         };
 
         assert!(exec_opts.dry_run);
         assert!(!exec_opts.interactive);
+        assert!(exec_opts.keep_executables);
     }
 
     #[test]
@@ -36,10 +46,12 @@ mod tests {
         let original = ExecutionOptions {
             dry_run: true,
             interactive: false,
+            keep_executables: true,
         };
         let cloned = original.clone();
 
         assert_eq!(original.dry_run, cloned.dry_run);
         assert_eq!(original.interactive, cloned.interactive);
+        assert_eq!(original.keep_executables, cloned.keep_executables);
     }
 }

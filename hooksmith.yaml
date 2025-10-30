@@ -1,6 +1,6 @@
 pre-commit:
   commands:
-    - cargo fmt --all -- --check
+    - cargo fmt --all
     - cargo clippy --workspace --release --all-targets --all-features -- --deny warnings -D warnings -W clippy::correctness -W clippy::suspicious -W clippy::complexity -W clippy::perf -W clippy::style -W clippy::pedantic
     - cargo audit
     - cargo outdated

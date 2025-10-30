@@ -140,7 +140,7 @@ fn inner_main() -> Result<()> {
         return Ok(());
     }
 
-    Cleaner::clean_projects(projects);
+    Cleaner::clean_projects(projects, &execution_options);
 
     Ok(())
 }

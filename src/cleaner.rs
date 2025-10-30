@@ -13,7 +13,8 @@ use rayon::prelude::*;
 use std::fs;
 use std::sync::{Arc, Mutex};
 
-use crate::project::{Project, Projects};
+use crate::config::ExecutionOptions;
+use crate::project::{Project, ProjectType, Projects};
 
 /// Handles the cleanup of build directories from development projects.
 ///
@@ -51,6 +52,7 @@ impl Cleaner {
     /// # Arguments
     ///
     /// * `projects` - A collection of projects to clean
+    /// * `execution_options` - Configuration options for the cleanup operation
     ///
     /// # Panics
     ///
@@ -71,9 +73,14 @@ impl Cleaner {
     /// # Examples
     ///
     /// ```
-    /// # use crate::{Cleaner, Projects};
+    /// # use crate::{Cleaner, Projects, ExecutionOptions};
     /// let projects = Projects::from(vec![/* project instances */]);
-    /// Cleaner::clean_projects(projects);
+    /// let options = ExecutionOptions {
+    ///     dry_run: false,
+    ///     interactive: false,
+    ///     keep_executables: true,
+    /// };
+    /// Cleaner::clean_projects(projects, &options);
     /// ```
     ///
     /// # Performance
@@ -87,7 +94,7 @@ impl Cleaner {
     /// Individual project cleanup failures do not stop the overall process.
     /// All errors are collected and reported at the end, allowing the
     /// cleanup to proceed for projects that can be successfully processed.
-    pub fn clean_projects(projects: Projects) {
+    pub fn clean_projects(projects: Projects, execution_options: &ExecutionOptions) {
         let total_projects = projects.len();
         let total_size: u64 = projects.get_total_size();
 
@@ -107,7 +114,7 @@ impl Cleaner {
 
         // Clean projects in parallel
         projects.into_par_iter().for_each(|project| {
-            let result = clean_single_project(&project);
+            let result = clean_single_project(&project, execution_options.keep_executables);
 
             match result {
                 Ok(freed_size) => {
@@ -180,15 +187,244 @@ impl Cleaner {
     }
 }
 
+/// Clean a build directory while preserving executable binaries.
+///
+/// This function implements selective deletion for Rust and Go projects,
+/// preserving final executable binaries while removing intermediate build artifacts.
+///
+/// # Arguments
+///
+/// * `project` - The project to clean
+///
+/// # Returns
+///
+/// - `Ok(())` - If the cleanup succeeded
+/// - `Err(anyhow::Error)` - If the cleanup operation failed
+///
+/// # Behavior by Project Type
+///
+/// **Rust Projects:**
+/// - Preserves executables in `target/debug/` and `target/release/` directories
+/// - Removes all other files and directories within `target/`
+///
+/// **Go Projects:**
+/// - Preserves executables in `bin/` directory if it exists within the build dir
+/// - Removes all other files and directories
+///
+/// **Other Project Types:**
+/// - Falls back to complete removal (no executables to preserve)
+fn clean_with_executable_preservation(project: &Project) -> Result<()> {
+    match project.kind {
+        ProjectType::Rust => clean_rust_with_executables(project),
+        ProjectType::Go => clean_go_with_executables(project),
+        _ => {
+            // For Node.js and Python, there are no compiled executables to preserve
+            fs::remove_dir_all(&project.build_arts.path)?;
+            Ok(())
+        }
+    }
+}
+
+/// Clean a Rust project's target directory while preserving executables.
+///
+/// This function identifies executable files in the `target/debug/` and `target/release/`
+/// directories and preserves them while removing all other build artifacts.
+///
+/// # Arguments
+///
+/// * `project` - The Rust project to clean
+///
+/// # Returns
+///
+/// - `Ok(())` - If the cleanup succeeded
+/// - `Err(anyhow::Error)` - If the cleanup operation failed
+///
+/// # Implementation
+///
+/// 1. Scans `target/debug/` and `target/release/` for executable files
+/// 2. Backs up found executables to a temporary location
+/// 3. Removes the entire `target/` directory
+/// 4. Recreates `target/debug/` and `target/release/` directories
+/// 5. Restores the executables to their original locations
+fn clean_rust_with_executables(project: &Project) -> Result<()> {
+    let target_dir = &project.build_arts.path;
+    let debug_dir = target_dir.join("debug");
+    let release_dir = target_dir.join("release");
+
+    // Find executables in debug and release directories
+    let mut executables = Vec::new();
+
+    for dir in [&debug_dir, &release_dir] {
+        if dir.exists()
+            && let Ok(entries) = fs::read_dir(dir)
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && is_executable(&path) {
+                    executables.push(path);
+                }
+            }
+        }
+    }
+
+    // If no executables found, just remove everything
+    if executables.is_empty() {
+        fs::remove_dir_all(target_dir)?;
+        return Ok(());
+    }
+
+    // Create temporary directory for backup
+    let temp_dir =
+        std::env::temp_dir().join(format!("clean-dev-dirs-backup-{}", std::process::id()));
+    fs::create_dir_all(&temp_dir)?;
+
+    // Backup executables
+    let mut backed_up = Vec::new();
+    for exe in &executables {
+        if let Some(file_name) = exe.file_name() {
+            let backup_path = temp_dir.join(file_name);
+            if fs::copy(exe, &backup_path).is_ok() {
+                backed_up.push((backup_path, exe.clone()));
+            }
+        }
+    }
+
+    // Remove the target directory
+    fs::remove_dir_all(target_dir)?;
+
+    // Recreate debug and release directories and restore executables
+    for (backup_path, original_path) in backed_up {
+        if let Some(parent) = original_path.parent() {
+            fs::create_dir_all(parent)?;
+            let _ = fs::copy(&backup_path, &original_path);
+        }
+    }
+
+    // Clean up temporary directory
+    let _ = fs::remove_dir_all(&temp_dir);
+
+    Ok(())
+}
+
+/// Clean a Go project's vendor directory while preserving executables.
+///
+/// This function preserves executable files in the `bin/` directory within
+/// the vendor directory, if it exists.
+///
+/// # Arguments
+///
+/// * `project` - The Go project to clean
+///
+/// # Returns
+///
+/// - `Ok(())` - If the cleanup succeeded
+/// - `Err(anyhow::Error)` - If the cleanup operation failed
+fn clean_go_with_executables(project: &Project) -> Result<()> {
+    let vendor_dir = &project.build_arts.path;
+    let bin_dir = vendor_dir.join("bin");
+
+    // Check if there's a bin directory with executables
+    let mut executables = Vec::new();
+    if bin_dir.exists()
+        && let Ok(entries) = fs::read_dir(&bin_dir)
+    {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && is_executable(&path) {
+                executables.push(path);
+            }
+        }
+    }
+
+    // If no executables found, just remove everything
+    if executables.is_empty() {
+        fs::remove_dir_all(vendor_dir)?;
+        return Ok(());
+    }
+
+    // Create temporary directory for backup
+    let temp_dir =
+        std::env::temp_dir().join(format!("clean-dev-dirs-backup-{}", std::process::id()));
+    fs::create_dir_all(&temp_dir)?;
+
+    // Backup executables
+    let mut backed_up = Vec::new();
+    for exe in &executables {
+        if let Some(file_name) = exe.file_name() {
+            let backup_path = temp_dir.join(file_name);
+            if fs::copy(exe, &backup_path).is_ok() {
+                backed_up.push((backup_path, exe.clone()));
+            }
+        }
+    }
+
+    // Remove the vendor directory
+    fs::remove_dir_all(vendor_dir)?;
+
+    // Recreate bin directory and restore executables
+    if !backed_up.is_empty() {
+        fs::create_dir_all(&bin_dir)?;
+        for (backup_path, original_path) in backed_up {
+            let _ = fs::copy(&backup_path, &original_path);
+        }
+    }
+
+    // Clean up temporary directory
+    let _ = fs::remove_dir_all(&temp_dir);
+
+    Ok(())
+}
+
+/// Check if a file is executable.
+///
+/// On Unix systems, checks the executable permission bit.
+/// On Windows, checks for common executable extensions (.exe, .dll, .com).
+///
+/// # Arguments
+///
+/// * `path` - Path to the file to check
+///
+/// # Returns
+///
+/// `true` if the file is likely an executable, `false` otherwise
+fn is_executable(path: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(path) {
+            let permissions = metadata.permissions();
+            // Check if any execute bit is set
+            return permissions.mode() & 0o111 != 0;
+        }
+        false
+    }
+
+    #[cfg(windows)]
+    {
+        if let Some(ext) = path.extension() {
+            let ext_str = ext.to_string_lossy().to_lowercase();
+            return matches!(ext_str.as_str(), "exe" | "dll" | "com");
+        }
+        false
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        // Fallback for other platforms
+        false
+    }
+}
+
 /// Clean the build directory for a single project.
 ///
 /// This function handles the cleanup of an individual project's build directory.
 /// It calculates the actual size before deletion and then removes the entire
-/// directory tree.
+/// directory tree, optionally preserving executable binaries.
 ///
 /// # Arguments
 ///
 /// * `project` - The project whose build directory should be cleaned
+/// * `keep_executables` - Whether to preserve compiled executables
 ///
 /// # Returns
 ///
@@ -199,8 +435,11 @@ impl Cleaner {
 ///
 /// 1. Checks if the build directory exists (returns 0 if not)
 /// 2. Calculates the actual size of the directory before deletion
-/// 3. Removes the entire directory tree
-/// 4. Returns the amount of space freed
+/// 3. If `keep_executables` is true and the project is Rust or Go:
+///    - Preserves executable binaries in appropriate locations
+///    - Removes only intermediate build artifacts
+/// 4. Otherwise, removes the entire directory tree
+/// 5. Returns the amount of space freed
 ///
 /// # Error Conditions
 ///
@@ -214,13 +453,13 @@ impl Cleaner {
 /// ```
 /// # use crate::{Project, clean_single_project};
 /// # use anyhow::Result;
-/// let result = clean_single_project(&project);
+/// let result = clean_single_project(&project, true);
 /// match result {
 ///     Ok(freed_bytes) => println!("Freed {} bytes", freed_bytes),
 ///     Err(e) => eprintln!("Cleanup failed: {}", e),
 /// }
 /// ```
-fn clean_single_project(project: &Project) -> Result<u64> {
+fn clean_single_project(project: &Project, keep_executables: bool) -> Result<u64> {
     let build_dir = &project.build_arts.path;
 
     if !build_dir.exists() {
@@ -230,8 +469,12 @@ fn clean_single_project(project: &Project) -> Result<u64> {
     // Get the actual size before deletion (might be different from the cached size)
     let actual_size = calculate_directory_size(build_dir);
 
-    // Remove the build directory
-    fs::remove_dir_all(build_dir)?;
+    // Remove the build directory with optional executable preservation
+    if keep_executables {
+        clean_with_executable_preservation(project)?;
+    } else {
+        fs::remove_dir_all(build_dir)?;
+    }
 
     Ok(actual_size)
 }

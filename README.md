@@ -29,6 +29,7 @@ clean-dev-dirs --interactive
 ## Features
 
 - **Multi-language support**: Clean Rust (`target/`), Node.js (`node_modules/`), Python (cache dirs), and Go (`vendor/`) build artifacts
+- **Executable preservation**: Optionally keep compiled binaries while removing build artifacts
 - **Parallel scanning**: Lightning-fast directory traversal using multithreading
 - **Smart filtering**: Filter by project size, modification time, and project type
 - **Interactive mode**: Choose which projects to clean with an intuitive interface
@@ -134,6 +135,9 @@ clean-dev-dirs --skip node_modules --skip .git
 # Non-interactive mode (auto-confirm)
 clean-dev-dirs --yes
 
+# Keep compiled executables (preserves binaries while cleaning build artifacts)
+clean-dev-dirs --keep-executables
+
 # Combine multiple options
 clean-dev-dirs ~/Projects -p rust --keep-size 100MB --keep-days 30 --dry-run
 ```
@@ -165,6 +169,11 @@ clean-dev-dirs ~/code --keep-size 100MB --keep-days 60
 clean-dev-dirs /large/directory --threads 16 --verbose
 ```
 
+**6. Clean while preserving executables:**
+```bash
+clean-dev-dirs ~/rust-projects -p rust --keep-executables
+```
+
 ## Command Reference
 
 ### Main Arguments
@@ -193,6 +202,7 @@ clean-dev-dirs /large/directory --threads 16 --verbose
 | `--yes` | `-y` | Don't ask for confirmation; clean all detected projects |
 | `--dry-run` | | List cleanable projects without actually cleaning |
 | `--interactive` | `-i` | Use interactive project selection |
+| `--keep-executables` | `-k` | Preserve compiled binaries while removing build artifacts |
 
 ### Scanning Options
 
@@ -251,11 +261,50 @@ The tool automatically detects development projects by looking for characteristi
 - **Cleans**: `vendor/` directory
 - **Name extraction**: From module path in `go.mod`
 
+## Executable Preservation
+
+The `--keep-executables` flag allows you to reclaim disk space from build artifacts while preserving your compiled binaries. This is particularly useful when:
+
+- You want to free up space but keep your working executables
+- You're cleaning projects you're actively developing
+- You want to avoid recompiling release binaries
+
+### How It Works
+
+**For Rust Projects:**
+- Scans `target/debug/` and `target/release/` for executable files
+- Backs up executables to a temporary location
+- Removes the entire `target/` directory
+- Restores executables to their original locations
+- Example: Keeps `target/release/my-app` but removes all dependencies and intermediate artifacts
+
+**For Go Projects:**
+- Preserves executable files in the `vendor/bin/` directory
+- Removes all other vendor dependencies
+- Note: Most Go projects don't store executables in the vendor directory
+
+**For Node.js and Python Projects:**
+- No effect (these languages don't produce standalone compiled executables)
+
+### Example Usage
+
+```bash
+# Clean Rust projects but keep release binaries
+clean-dev-dirs ~/rust-workspace -p rust --keep-executables
+
+# Interactive cleaning with executable preservation
+clean-dev-dirs --interactive --keep-executables
+
+# Combine with other filters
+clean-dev-dirs --keep-executables --keep-days 30 --keep-size 100MB
+```
+
 ## Safety Features
 
 - **Dry-run mode**: Preview all operations before execution with `--dry-run`
 - **Interactive confirmation**: Manually select projects to clean with `--interactive`
 - **Intelligent filtering**: Skip recently modified or small projects with `--keep-days` and `--keep-size`
+- **Executable preservation**: Keep compiled binaries with `--keep-executables`
 - **Error handling**: Graceful handling of permission errors and inaccessible files
 - **Read-only scanning**: Never modifies files during the scanning phase
 - **Clear output**: Color-coded, human-readable output with project types and sizes

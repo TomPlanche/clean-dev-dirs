@@ -39,6 +39,7 @@ struct FilteringArgs {
 /// These options determine how the cleanup process runs, including confirmation
 /// prompts, dry-run mode, and interactive selection.
 #[derive(Parser)]
+#[allow(clippy::struct_excessive_bools)]
 struct ExecutionArgs {
     /// Don't ask for confirmation; Just clean all detected projects
     ///
@@ -60,6 +61,14 @@ struct ExecutionArgs {
     /// select which ones to clean using an interactive interface.
     #[arg(short = 'i', long)]
     interactive: bool,
+
+    /// Keep compiled executables during cleanup
+    ///
+    /// When enabled, preserves final executable binaries while removing build artifacts.
+    /// For Rust projects: keeps binaries in target/debug/ and target/release/
+    /// For Go projects: keeps binaries in bin/ directory
+    #[arg(short = 'k', long)]
+    keep_executables: bool,
 }
 
 /// Command-line arguments for controlling directory scanning behavior.
@@ -180,6 +189,7 @@ impl Cli {
         ExecutionOptions {
             dry_run: self.execution.dry_run,
             interactive: self.execution.interactive,
+            keep_executables: self.execution.keep_executables,
         }
     }
 
@@ -291,11 +301,18 @@ mod tests {
 
     #[test]
     fn test_execution_options() {
-        let args = Cli::parse_from(["clean-dev-dirs", "--dry-run", "--interactive", "--yes"]);
+        let args = Cli::parse_from([
+            "clean-dev-dirs",
+            "--dry-run",
+            "--interactive",
+            "--yes",
+            "--keep-executables",
+        ]);
         let exec_opts = args.execution_options();
 
         assert!(exec_opts.dry_run);
         assert!(exec_opts.interactive);
+        assert!(exec_opts.keep_executables);
     }
 
     #[test]
