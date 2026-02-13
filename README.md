@@ -1,4 +1,10 @@
-# 🧹 clean-dev-dirs
+<pre>
+        ▀▀█                                    █                           █    ▀                 
+  ▄▄▄     █     ▄▄▄    ▄▄▄   ▄ ▄▄           ▄▄▄█   ▄▄▄   ▄   ▄          ▄▄▄█  ▄▄▄     ▄ ▄▄   ▄▄▄  
+ █▀  ▀    █    █▀  █  ▀   █  █▀  █         █▀ ▀█  █▀  █  ▀▄ ▄▀         █▀ ▀█    █     █▀  ▀ █   ▀ 
+ █        █    █▀▀▀▀  ▄▀▀▀█  █   █   ▀▀▀   █   █  █▀▀▀▀   █▄█    ▀▀▀   █   █    █     █      ▀▀▀▄ 
+ ▀█▄▄▀    ▀▄▄  ▀█▄▄▀  ▀▄▄▀█  █   █         ▀█▄██  ▀█▄▄▀    █           ▀█▄██  ▄▄█▄▄   █     ▀▄▄▄▀ 
+</pre>
 
 > A fast and efficient CLI tool for recursively cleaning Rust `target/`, Node.js `node_modules/`, Python cache, and Go `vendor/` directories to reclaim disk space.
 
@@ -34,6 +40,7 @@ clean-dev-dirs --interactive
 - **Interactive mode**: Choose which projects to clean with an intuitive interface
 - **Dry-run mode**: Preview what would be cleaned without actually deleting anything
 - **Progress indicators**: Real-time feedback during scanning and cleaning operations
+- **Executable preservation**: Keep compiled binaries before cleaning with `--keep-executables`
 - **Detailed statistics**: See total space that can be reclaimed before cleaning
 - **Flexible configuration**: Combine multiple filters and options for precise control
 
@@ -119,6 +126,28 @@ clean-dev-dirs --keep-days 30
 clean-dev-dirs --keep-size 50MB --keep-days 7
 ```
 
+### Keeping Executables
+
+```bash
+# Preserve compiled binaries before cleaning
+clean-dev-dirs --keep-executables
+# or use short flag
+clean-dev-dirs -k
+
+# In interactive mode (-i) without -k, you will be prompted:
+#   "Keep compiled executables before cleaning? (y/N)"
+clean-dev-dirs --interactive
+
+# Combine with other options
+clean-dev-dirs ~/Projects -p rust -k --keep-days 30
+```
+
+When enabled, compiled outputs are copied to `<project>/bin/` before the build directory is deleted:
+
+- **Rust**: executables from `target/release/` and `target/debug/` are copied to `bin/release/` and `bin/debug/`
+- **Python**: `.whl` files from `dist/` and `.so`/`.pyd` C extensions from `build/` are copied to `bin/`
+- **Node.js / Go**: no-op (their cleaned directories contain dependencies, not build outputs)
+
 ### Advanced Options
 
 ```bash
@@ -165,6 +194,11 @@ clean-dev-dirs ~/code --keep-size 100MB --keep-days 60
 clean-dev-dirs /large/directory --threads 16 --verbose
 ```
 
+**6. Clean Rust projects but keep the compiled binaries:**
+```bash
+clean-dev-dirs ~/Projects -p rust -k
+```
+
 ## Command Reference
 
 ### Main Arguments
@@ -193,6 +227,7 @@ clean-dev-dirs /large/directory --threads 16 --verbose
 | `--yes` | `-y` | Don't ask for confirmation; clean all detected projects |
 | `--dry-run` | | List cleanable projects without actually cleaning |
 | `--interactive` | `-i` | Use interactive project selection |
+| `--keep-executables` | `-k` | Copy compiled executables to `<project>/bin/` before cleaning |
 
 ### Scanning Options
 

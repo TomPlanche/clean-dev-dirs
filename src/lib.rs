@@ -8,6 +8,7 @@
 
 pub mod cleaner;
 pub mod config;
+pub mod executables;
 pub mod filtering;
 pub mod project;
 pub mod scanner;
