@@ -39,6 +39,7 @@ use clean_dev_dirs::{
 use cli::Cli;
 use colored::Colorize;
 use humansize::{DECIMAL, format_size};
+use inquire::Confirm;
 use std::process::exit;
 
 /// Entry point for the clean-dev-dirs application.
@@ -119,6 +120,8 @@ fn inner_main() -> Result<()> {
     let projects: Projects = filtered_projects.into();
     projects.print_summary(total_size);
 
+    let mut keep_executables = execution_options.keep_executables;
+
     if execution_options.interactive {
         let filtered_projects = projects.interactive_selection()?;
 
@@ -126,6 +129,12 @@ fn inner_main() -> Result<()> {
             println!("{}", "✨ No projects selected for cleaning!".green());
 
             return Ok(());
+        }
+
+        if !keep_executables {
+            keep_executables = Confirm::new("Keep compiled executables before cleaning?")
+                .with_default(false)
+                .prompt()?;
         }
     }
 
@@ -140,7 +149,7 @@ fn inner_main() -> Result<()> {
         return Ok(());
     }
 
-    Cleaner::clean_projects(projects);
+    Cleaner::clean_projects(projects, keep_executables);
 
     Ok(())
 }

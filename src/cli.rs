@@ -39,6 +39,7 @@ struct FilteringArgs {
 /// These options determine how the cleanup process runs, including confirmation
 /// prompts, dry-run mode, and interactive selection.
 #[derive(Parser)]
+#[allow(clippy::struct_excessive_bools)]
 struct ExecutionArgs {
     /// Don't ask for confirmation; Just clean all detected projects
     ///
@@ -60,6 +61,14 @@ struct ExecutionArgs {
     /// select which ones to clean using an interactive interface.
     #[arg(short = 'i', long)]
     interactive: bool,
+
+    /// Copy compiled executables to <project>/bin/ before cleaning
+    ///
+    /// When enabled, preserves compiled binaries (e.g. from target/release/
+    /// and target/debug/ for Rust projects) by copying them to a bin/ directory
+    /// in the project root before deleting build directories.
+    #[arg(short = 'k', long)]
+    keep_executables: bool,
 }
 
 /// Command-line arguments for controlling directory scanning behavior.
@@ -180,6 +189,7 @@ impl Cli {
         ExecutionOptions {
             dry_run: self.execution.dry_run,
             interactive: self.execution.interactive,
+            keep_executables: self.execution.keep_executables,
         }
     }
 
@@ -254,6 +264,7 @@ mod tests {
         let exec_opts = args.execution_options();
         assert!(!exec_opts.dry_run);
         assert!(!exec_opts.interactive);
+        assert!(!exec_opts.keep_executables);
 
         let scan_opts = args.scan_options();
         assert!(!scan_opts.verbose);
@@ -296,6 +307,18 @@ mod tests {
 
         assert!(exec_opts.dry_run);
         assert!(exec_opts.interactive);
+        assert!(!exec_opts.keep_executables);
+    }
+
+    #[test]
+    fn test_keep_executables_flag() {
+        let args = Cli::parse_from(["clean-dev-dirs", "--keep-executables"]);
+        let exec_opts = args.execution_options();
+        assert!(exec_opts.keep_executables);
+
+        let args_short = Cli::parse_from(["clean-dev-dirs", "-k"]);
+        let exec_opts_short = args_short.execution_options();
+        assert!(exec_opts_short.keep_executables);
     }
 
     #[test]

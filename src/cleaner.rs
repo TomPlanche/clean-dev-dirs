@@ -13,6 +13,7 @@ use rayon::prelude::*;
 use std::fs;
 use std::sync::{Arc, Mutex};
 
+use crate::executables;
 use crate::project::{Project, Projects};
 
 /// Handles the cleanup of build directories from development projects.
@@ -87,7 +88,7 @@ impl Cleaner {
     /// Individual project cleanup failures do not stop the overall process.
     /// All errors are collected and reported at the end, allowing the
     /// cleanup to proceed for projects that can be successfully processed.
-    pub fn clean_projects(projects: Projects) {
+    pub fn clean_projects(projects: Projects, keep_executables: bool) {
         let total_projects = projects.len();
         let total_size: u64 = projects.get_total_size();
 
@@ -107,7 +108,7 @@ impl Cleaner {
 
         // Clean projects in parallel
         projects.into_par_iter().for_each(|project| {
-            let result = clean_single_project(&project);
+            let result = clean_single_project(&project, keep_executables);
 
             match result {
                 Ok(freed_size) => {
@@ -220,11 +221,36 @@ impl Cleaner {
 ///     Err(e) => eprintln!("Cleanup failed: {}", e),
 /// }
 /// ```
-fn clean_single_project(project: &Project) -> Result<u64> {
+fn clean_single_project(project: &Project, keep_executables: bool) -> Result<u64> {
     let build_dir = &project.build_arts.path;
 
     if !build_dir.exists() {
         return Ok(0);
+    }
+
+    // Preserve executables before deletion if requested
+    if keep_executables {
+        match executables::preserve_executables(project) {
+            Ok(preserved) => {
+                if !preserved.is_empty() {
+                    eprintln!(
+                        "  Preserved {} executable(s) from {}",
+                        preserved.len(),
+                        project
+                            .root_path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("unknown")
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "  Warning: failed to preserve executables for {}: {e}",
+                    project.root_path.display()
+                );
+            }
+        }
     }
 
     // Get the actual size before deletion (might be different from the cached size)
