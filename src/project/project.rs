@@ -8,12 +8,15 @@ use std::{
     path::PathBuf,
 };
 
+use serde::Serialize;
+
 /// Enumeration of supported development project types.
 ///
 /// This enum distinguishes between different types of development projects
 /// that the tool can detect and clean. Each project type has its own
 /// characteristic files and build directories.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ProjectType {
     /// Rust project with Cargo.toml and target/ directory
     ///
@@ -44,7 +47,7 @@ pub enum ProjectType {
 ///
 /// This struct contains metadata about the build directory or artifacts
 /// that are candidates for cleanup, including their location and total size.
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct BuildArtifacts {
     /// Path to the build directory (target/ or `node_modules`/)
     ///
@@ -65,7 +68,7 @@ pub struct BuildArtifacts {
 /// This struct encapsulates all information about a development project,
 /// including its type, location, build artifacts, and metadata extracted
 /// from project configuration files.
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct Project {
     /// Type of the project (Rust or Node.js)
     pub kind: ProjectType,
@@ -126,7 +129,7 @@ impl Project {
     /// );
     /// ```
     #[must_use]
-    pub fn new(
+    pub const fn new(
         kind: ProjectType,
         root_path: PathBuf,
         build_arts: BuildArtifacts,

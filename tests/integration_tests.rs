@@ -416,17 +416,17 @@ fn test_scanner_nested_projects() {
     // Should find all 3 projects (2 Rust + 1 Node.js)
     assert_eq!(projects.len(), 3);
 
-    let rust_projects: Vec<_> = projects
+    let rust_count = projects
         .iter()
         .filter(|p| p.kind == ProjectType::Rust)
-        .collect();
-    let node_projects: Vec<_> = projects
+        .count();
+    let node_count = projects
         .iter()
         .filter(|p| p.kind == ProjectType::Node)
-        .collect();
+        .count();
 
-    assert_eq!(rust_projects.len(), 2);
-    assert_eq!(node_projects.len(), 1);
+    assert_eq!(rust_count, 2);
+    assert_eq!(node_count, 1);
 }
 
 #[test]

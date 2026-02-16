@@ -189,8 +189,7 @@ impl Projects {
             .with_default(&defaults)
             .prompt()?;
 
-        // Find indices of selected items
-        let selected_indices: Vec<usize> = selections
+        Ok(selections
             .iter()
             .filter_map(|selected_item| {
                 self.0
@@ -212,10 +211,6 @@ impl Projects {
                     })
                     .map(|(i, _)| i)
             })
-            .collect();
-
-        Ok(selected_indices
-            .into_iter()
             .map(|i| self.0[i].clone())
             .collect())
     }
@@ -233,7 +228,7 @@ impl Projects {
     /// println!("Found {} projects", projects.len());
     /// ```
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.0.len()
     }
 
@@ -252,8 +247,17 @@ impl Projects {
     /// }
     /// ```
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// Return a slice of the underlying project collection.
+    ///
+    /// Useful for inspecting projects without consuming the collection,
+    /// for example to build JSON output before cleanup.
+    #[must_use]
+    pub fn as_slice(&self) -> &[Project] {
+        &self.0
     }
 
     /// Print a detailed summary of the projects and their reclaimable space.
