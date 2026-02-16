@@ -486,3 +486,509 @@ fn test_project_types_comprehensive() {
     let cloned_type = rust_type.clone();
     assert_eq!(rust_type, cloned_type);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Cross-platform path handling tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_scanner_with_spaces_in_directory_names() {
+    let temp_dir = create_test_directory();
+    let base = temp_dir.path().join("directory with spaces");
+    create_dir(&base);
+
+    create_rust_project(&base, "spaced rust project");
+    create_node_project(&base, "spaced node project");
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::All);
+    let projects = scanner.scan_directory(&base);
+
+    assert_eq!(projects.len(), 2);
+}
+
+#[test]
+fn test_scanner_with_unicode_directory_names() {
+    let temp_dir = create_test_directory();
+    let base_path = temp_dir.path();
+
+    // Japanese characters
+    create_rust_project(base_path, "プロジェクト");
+    // Emoji in directory name
+    create_node_project(base_path, "my-app-🚀");
+    // Accented characters
+    create_python_project(base_path, "café-project");
+    // Chinese characters
+    create_go_project(base_path, "项目");
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::All);
+    let projects = scanner.scan_directory(base_path);
+
+    assert_eq!(projects.len(), 4);
+}
+
+#[test]
+fn test_scanner_with_deeply_nested_directories() {
+    let temp_dir = create_test_directory();
+    let base_path = temp_dir.path();
+
+    // Create a deeply nested project (tests platform path length limits)
+    let deep_path = base_path
+        .join("level1")
+        .join("level2")
+        .join("level3")
+        .join("level4")
+        .join("level5");
+
+    create_rust_project(&deep_path, "deep-project");
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
+    let projects = scanner.scan_directory(base_path);
+
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].name.as_deref(), Some("deep-project"));
+}
+
+#[test]
+fn test_scanner_with_special_characters_in_paths() {
+    let temp_dir = create_test_directory();
+    let base_path = temp_dir.path();
+
+    // Dashes, underscores, dots, parentheses
+    create_rust_project(base_path, "my-project_v2.0");
+    create_node_project(base_path, "app (copy)");
+    create_python_project(base_path, "lib.utils.v3");
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::All);
+    let projects = scanner.scan_directory(base_path);
+
+    assert_eq!(projects.len(), 3);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Unix-specific integration tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+#[cfg(unix)]
+fn test_scanner_hidden_directory_itself_not_detected_unix() {
+    let temp_dir = create_test_directory();
+    let base_path = temp_dir.path();
+
+    // Visible project — should be found
+    create_rust_project(base_path, "visible-project");
+
+    // A hidden directory that IS a project (Cargo.toml + target/ inside .hidden-project/)
+    // should NOT be detected because its name starts with '.'
+    let hidden_project = base_path.join(".hidden-project");
+    create_dir(&hidden_project);
+    create_file(
+        &hidden_project.join("Cargo.toml"),
+        "[package]\nname = \"hidden\"\nversion = \"0.1.0\"",
+    );
+    create_dir(&hidden_project.join("target"));
+    create_file(
+        &hidden_project.join("target/dummy"),
+        "content",
+    );
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
+    let projects = scanner.scan_directory(base_path);
+
+    // Only the visible project should be found
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].name.as_deref(), Some("visible-project"));
+}
+
+#[test]
+#[cfg(unix)]
+fn test_scanner_traverses_into_hidden_dirs_finds_visible_children_unix() {
+    let temp_dir = create_test_directory();
+    let base_path = temp_dir.path();
+
+    // A non-hidden project nested inside a hidden directory.
+    // The scanner still descends into hidden dirs, so visible children are found.
+    let hidden_base = base_path.join(".hidden-dir");
+    create_dir(&hidden_base);
+    create_rust_project(&hidden_base, "child-project");
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
+    let projects = scanner.scan_directory(base_path);
+
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].name.as_deref(), Some("child-project"));
+}
+
+#[test]
+#[cfg(unix)]
+fn test_executable_preservation_integration_unix() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp_dir = create_test_directory();
+    let project_path = create_rust_project(temp_dir.path(), "exe-project");
+
+    // Create a real executable in the release dir
+    let release_dir = project_path.join("target/release");
+    create_dir(&release_dir);
+    let exe = release_dir.join("my-tool");
+    create_file(&exe, "#!/bin/bash\necho hello");
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    // Also create a non-executable file
+    create_file(&release_dir.join("deps.d"), "dep info");
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
+    let projects = scanner.scan_directory(temp_dir.path());
+
+    assert_eq!(projects.len(), 1);
+
+    // Preserve executables
+    let preserved = clean_dev_dirs::executables::preserve_executables(&projects[0]).unwrap();
+    assert_eq!(preserved.len(), 1);
+    assert!(preserved[0].destination.exists());
+    assert!(preserved[0]
+        .destination
+        .to_string_lossy()
+        .contains("bin/release/my-tool"));
+}
+
+#[test]
+#[cfg(unix)]
+fn test_scanner_symlink_handling_unix() {
+    let temp_dir = create_test_directory();
+    let base_path = temp_dir.path();
+
+    // Create a real project
+    let real_project = create_rust_project(base_path, "real-project");
+
+    // Create a symlink to the project directory
+    let link_path = base_path.join("linked-project");
+    std::os::unix::fs::symlink(&real_project, &link_path).unwrap();
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
+    let projects = scanner.scan_directory(base_path);
+
+    // Should find at least the real project (symlink behavior may vary)
+    assert!(!projects.is_empty());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Windows-specific integration tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+#[cfg(windows)]
+fn test_executable_preservation_integration_windows() {
+    let temp_dir = create_test_directory();
+    let project_path = create_rust_project(temp_dir.path(), "exe-project");
+
+    let release_dir = project_path.join("target\\release");
+    create_dir(&release_dir);
+
+    // On Windows, executables have the .exe extension
+    create_file(&release_dir.join("my-tool.exe"), "fake binary");
+    create_file(&release_dir.join("deps.d"), "dep info");
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
+    let projects = scanner.scan_directory(temp_dir.path());
+
+    assert_eq!(projects.len(), 1);
+
+    let preserved = clean_dev_dirs::executables::preserve_executables(&projects[0]).unwrap();
+    assert_eq!(preserved.len(), 1);
+    assert!(preserved[0].destination.exists());
+    assert!(preserved[0]
+        .destination
+        .to_string_lossy()
+        .contains("my-tool.exe"));
+}
+
+#[test]
+#[cfg(windows)]
+fn test_scanner_with_windows_long_paths() {
+    let temp_dir = create_test_directory();
+    let base_path = temp_dir.path();
+
+    // Create a project with a longer-than-typical Windows path
+    let long_segments: Vec<&str> = vec!["somewhat_long_directory_name"; 6];
+    let mut long_path = base_path.to_path_buf();
+    for segment in &long_segments {
+        long_path = long_path.join(segment);
+    }
+
+    create_rust_project(&long_path, "deep-windows-project");
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::Rust);
+    let projects = scanner.scan_directory(base_path);
+
+    assert_eq!(projects.len(), 1);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Python cross-platform extension tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_python_whl_preservation_cross_platform() {
+    let temp_dir = create_test_directory();
+    let project_path = create_python_project(temp_dir.path(), "py-dist-project");
+
+    // Create dist/ with .whl files (platform-agnostic format)
+    let dist_dir = project_path.join("dist");
+    create_dir(&dist_dir);
+    create_file(
+        &dist_dir.join("mypackage-1.0.0-py3-none-any.whl"),
+        "wheel content",
+    );
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::Python);
+    let projects = scanner.scan_directory(temp_dir.path());
+
+    assert_eq!(projects.len(), 1);
+
+    let preserved = clean_dev_dirs::executables::preserve_executables(&projects[0]).unwrap();
+    // Should find the .whl file on any platform
+    assert_eq!(preserved.len(), 1);
+    assert!(preserved[0]
+        .destination
+        .to_string_lossy()
+        .ends_with(".whl"));
+}
+
+#[test]
+#[cfg(unix)]
+fn test_python_so_preservation_unix() {
+    let temp_dir = create_test_directory();
+    let project_path = create_python_project(temp_dir.path(), "py-native-project");
+
+    // .so files are Unix shared objects
+    let build_dir = project_path.join("build/lib.linux-x86_64-cpython-39");
+    create_dir(&build_dir);
+    create_file(
+        &build_dir.join("_native.cpython-39-x86_64-linux-gnu.so"),
+        "shared object",
+    );
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::Python);
+    let projects = scanner.scan_directory(temp_dir.path());
+
+    assert_eq!(projects.len(), 1);
+
+    let preserved = clean_dev_dirs::executables::preserve_executables(&projects[0]).unwrap();
+    assert_eq!(preserved.len(), 1);
+    assert!(preserved[0]
+        .destination
+        .to_string_lossy()
+        .ends_with(".so"));
+}
+
+#[test]
+#[cfg(windows)]
+fn test_python_pyd_preservation_windows() {
+    let temp_dir = create_test_directory();
+    let project_path = create_python_project(temp_dir.path(), "py-native-project");
+
+    // .pyd files are Windows Python extensions
+    let build_dir = project_path.join("build\\lib.win-amd64-cpython-39");
+    create_dir(&build_dir);
+    create_file(
+        &build_dir.join("_native.cp39-win_amd64.pyd"),
+        "python extension",
+    );
+
+    let scan_options = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+
+    let scanner = Scanner::new(scan_options, ProjectFilter::Python);
+    let projects = scanner.scan_directory(temp_dir.path());
+
+    assert_eq!(projects.len(), 1);
+
+    let preserved = clean_dev_dirs::executables::preserve_executables(&projects[0]).unwrap();
+    assert_eq!(preserved.len(), 1);
+    assert!(preserved[0]
+        .destination
+        .to_string_lossy()
+        .ends_with(".pyd"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Config path cross-platform tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_config_path_ends_with_expected_suffix() {
+    use clean_dev_dirs::FileConfig;
+
+    if let Some(path) = FileConfig::config_path() {
+        // On all platforms, the config file should be named config.toml
+        // inside a clean-dev-dirs directory
+        assert!(
+            path.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                == "config.toml",
+            "Config file should be named config.toml"
+        );
+        assert!(
+            path.parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                == "clean-dev-dirs",
+            "Config should be inside clean-dev-dirs directory"
+        );
+    }
+}
+
+#[test]
+fn test_tilde_expansion_cross_platform() {
+    use clean_dev_dirs::config::file::expand_tilde;
+
+    let path = PathBuf::from("~/my-projects");
+    let expanded = expand_tilde(&path);
+
+    if let Some(home) = dirs::home_dir() {
+        assert_eq!(expanded, home.join("my-projects"));
+        // Should not contain the tilde anymore
+        assert!(!expanded.to_string_lossy().starts_with('~'));
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Removal strategy tests (cross-platform)
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_removal_strategy_from_bool() {
+    use clean_dev_dirs::cleaner::RemovalStrategy;
+
+    let trash = RemovalStrategy::from_use_trash(true);
+    assert!(matches!(trash, RemovalStrategy::Trash));
+
+    let permanent = RemovalStrategy::from_use_trash(false);
+    assert!(matches!(permanent, RemovalStrategy::Permanent));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parallel scanning consistency (cross-platform)
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parallel_and_single_thread_produce_same_results() {
+    let temp_dir = create_test_directory();
+    let base_path = temp_dir.path();
+
+    for i in 0..5 {
+        create_rust_project(base_path, &format!("rust-{i}"));
+        create_node_project(base_path, &format!("node-{i}"));
+        create_python_project(base_path, &format!("python-{i}"));
+        create_go_project(base_path, &format!("go-{i}"));
+    }
+
+    let single_thread = ScanOptions {
+        verbose: false,
+        threads: 1,
+        skip: vec![],
+    };
+    let multi_thread = ScanOptions {
+        verbose: false,
+        threads: 4,
+        skip: vec![],
+    };
+
+    let scanner1 = Scanner::new(single_thread, ProjectFilter::All);
+    let scanner4 = Scanner::new(multi_thread, ProjectFilter::All);
+
+    let mut projects_1t = scanner1.scan_directory(base_path);
+    let mut projects_4t = scanner4.scan_directory(base_path);
+
+    // Sort both by path for comparison
+    projects_1t.sort_by(|a, b| a.root_path.cmp(&b.root_path));
+    projects_4t.sort_by(|a, b| a.root_path.cmp(&b.root_path));
+
+    assert_eq!(projects_1t.len(), projects_4t.len());
+
+    for (p1, p4) in projects_1t.iter().zip(projects_4t.iter()) {
+        assert_eq!(p1.kind, p4.kind);
+        assert_eq!(p1.root_path, p4.root_path);
+        assert_eq!(p1.name, p4.name);
+    }
+}

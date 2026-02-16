@@ -336,4 +336,120 @@ keep_days = "not_a_number"
             assert_eq!(expanded, home);
         }
     }
+
+    // ── Platform-specific config path tests ─────────────────────────────
+
+    #[test]
+    fn test_config_path_is_platform_appropriate() {
+        let path = FileConfig::config_path();
+
+        // config_path might return None in CI environments without a home dir,
+        // but when it does return a path, it must match platform conventions.
+        if let Some(p) = &path {
+            let path_str = p.to_string_lossy();
+
+            #[cfg(target_os = "linux")]
+            assert!(
+                path_str.contains(".config"),
+                "Linux config path should be under $XDG_CONFIG_HOME or ~/.config, got: {path_str}"
+            );
+
+            #[cfg(target_os = "macos")]
+            assert!(
+                path_str.contains("Application Support") || path_str.contains(".config"),
+                "macOS config path should be under Library/Application Support, got: {path_str}"
+            );
+
+            #[cfg(target_os = "windows")]
+            assert!(
+                path_str.contains("AppData"),
+                "Windows config path should be under AppData, got: {path_str}"
+            );
+
+            // Common: always ends with our application config file name
+            assert!(p.ends_with("clean-dev-dirs/config.toml")
+                || p.ends_with(Path::new("clean-dev-dirs").join("config.toml")));
+        }
+    }
+
+    #[test]
+    fn test_config_path_parent_exists_or_can_be_created() {
+        // Verify the parent of the config path is a real, accessible directory
+        // (or at least its grandparent exists — the app dir might not exist yet).
+        if let Some(path) = FileConfig::config_path()
+            && let Some(grandparent) = path.parent().and_then(Path::parent)
+        {
+            // The system config directory should exist
+            assert!(
+                grandparent.exists(),
+                "Config grandparent directory should exist: {}",
+                grandparent.display()
+            );
+        }
+    }
+
+    #[test]
+    fn test_expand_tilde_deeply_nested() {
+        let path = PathBuf::from("~/a/b/c/d");
+        let expanded = expand_tilde(&path);
+
+        if let Some(home) = dirs::home_dir() {
+            assert_eq!(expanded, home.join("a").join("b").join("c").join("d"));
+            assert!(!expanded.to_string_lossy().contains('~'));
+        }
+    }
+
+    #[test]
+    fn test_expand_tilde_no_effect_on_non_tilde() {
+        // Relative paths without ~ should be unchanged
+        let relative = PathBuf::from("some/relative/path");
+        assert_eq!(expand_tilde(&relative), relative);
+
+        // Absolute Unix-style paths should be unchanged
+        let absolute = PathBuf::from("/usr/local/bin");
+        assert_eq!(expand_tilde(&absolute), absolute);
+
+        // Windows-style absolute paths should be unchanged
+        #[cfg(windows)]
+        {
+            let win_abs = PathBuf::from(r"C:\Users\user\Documents");
+            assert_eq!(expand_tilde(&win_abs), win_abs);
+        }
+    }
+
+    #[test]
+    fn test_config_toml_parsing_with_platform_paths() {
+        // Test that TOML parsing handles paths from any platform
+        let toml_unix = "dir = \"/home/user/projects\"\n";
+        let config: FileConfig = toml::from_str(toml_unix).unwrap();
+        assert_eq!(
+            config.dir,
+            Some(PathBuf::from("/home/user/projects"))
+        );
+
+        let toml_tilde = "dir = \"~/Projects\"\n";
+        let config: FileConfig = toml::from_str(toml_tilde).unwrap();
+        assert_eq!(config.dir, Some(PathBuf::from("~/Projects")));
+
+        let toml_relative = "dir = \"./projects\"\n";
+        let config: FileConfig = toml::from_str(toml_relative).unwrap();
+        assert_eq!(config.dir, Some(PathBuf::from("./projects")));
+    }
+
+    #[test]
+    fn test_file_config_all_execution_options_parse() {
+        let toml_content = r"
+[execution]
+keep_executables = true
+interactive = false
+dry_run = true
+use_trash = false
+";
+        let config: FileConfig = toml::from_str(toml_content).unwrap();
+
+        assert_eq!(config.execution.keep_executables, Some(true));
+        assert_eq!(config.execution.interactive, Some(false));
+        assert_eq!(config.execution.dry_run, Some(true));
+        assert_eq!(config.execution.use_trash, Some(false));
+    }
 }
