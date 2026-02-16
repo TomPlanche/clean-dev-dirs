@@ -16,7 +16,7 @@ pub mod utils;
 
 // Re-export commonly used types for convenience
 pub use cleaner::Cleaner;
-pub use config::{ExecutionOptions, FilterOptions, ProjectFilter, ScanOptions};
+pub use config::{ExecutionOptions, FileConfig, FilterOptions, ProjectFilter, ScanOptions};
 pub use filtering::filter_projects;
 pub use project::{BuildArtifacts, Project, ProjectType, Projects};
 pub use scanner::Scanner;
