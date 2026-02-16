@@ -35,8 +35,12 @@ mod cli;
 use anyhow::{Ok, Result, bail};
 use clap::Parser;
 use clean_dev_dirs::{
-    cleaner::Cleaner, config::FileConfig, filtering::filter_projects, output::JsonOutput,
-    project::Projects, scanner::Scanner,
+    cleaner::Cleaner,
+    config::FileConfig,
+    filtering::{filter_projects, sort_projects},
+    output::JsonOutput,
+    project::Projects,
+    scanner::Scanner,
 };
 use cli::Cli;
 use colored::Colorize;
@@ -131,7 +135,11 @@ fn inner_main() -> Result<()> {
         return Ok(());
     }
 
-    let filtered_projects = filter_projects(projects, &filter_options)?;
+    let sort_opts = args.sort_options(&file_config);
+
+    let mut filtered_projects = filter_projects(projects, &filter_options)?;
+
+    sort_projects(&mut filtered_projects, &sort_opts);
 
     if filtered_projects.is_empty() {
         if json_mode {

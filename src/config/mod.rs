@@ -10,5 +10,5 @@ pub mod scan;
 
 pub use execution::ExecutionOptions;
 pub use file::FileConfig;
-pub use filter::{FilterOptions, ProjectFilter};
+pub use filter::{FilterOptions, ProjectFilter, SortCriteria, SortOptions};
 pub use scan::ScanOptions;

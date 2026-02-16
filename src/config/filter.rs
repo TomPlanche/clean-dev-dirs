@@ -1,7 +1,8 @@
 //! Filtering configuration for project selection.
 //!
-//! This module defines the filtering options and project type filters used to
-//! determine which projects should be scanned and cleaned.
+//! This module defines the filtering options, project type filters, and sorting
+//! criteria used to determine which projects should be scanned, cleaned, and
+//! how they should be ordered in the output.
 
 use clap::ValueEnum;
 
@@ -39,6 +40,42 @@ pub struct FilterOptions {
 
     /// Minimum age in days for projects to be considered
     pub keep_days: u32,
+}
+
+/// Enumeration of supported sorting criteria for project output.
+///
+/// This enum determines how projects are ordered in the output.
+/// Each variant has a natural default direction:
+/// - `Size`: largest first (descending)
+/// - `Age`: oldest first (ascending)
+/// - `Name`: alphabetical (ascending)
+/// - `Type`: grouped by type name alphabetically
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ValueEnum)]
+pub enum SortCriteria {
+    /// Sort by build artifacts size (largest first by default)
+    Size,
+
+    /// Sort by build artifacts modification time (oldest first by default)
+    Age,
+
+    /// Sort by project name alphabetically (A-Z by default)
+    Name,
+
+    /// Sort by project type name alphabetically
+    Type,
+}
+
+/// Configuration for project sorting behavior.
+///
+/// Controls how the list of projects is ordered before display or processing.
+/// When `criteria` is `None`, projects are displayed in scan order.
+#[derive(Clone)]
+pub struct SortOptions {
+    /// The sorting criterion to apply, or `None` to preserve scan order
+    pub criteria: Option<SortCriteria>,
+
+    /// Whether to reverse the sort order
+    pub reverse: bool,
 }
 
 #[cfg(test)]
@@ -94,5 +131,54 @@ mod tests {
 
         assert_eq!(original.keep_size, cloned.keep_size);
         assert_eq!(original.keep_days, cloned.keep_days);
+    }
+
+    #[test]
+    fn test_sort_criteria_equality() {
+        assert_eq!(SortCriteria::Size, SortCriteria::Size);
+        assert_eq!(SortCriteria::Age, SortCriteria::Age);
+        assert_eq!(SortCriteria::Name, SortCriteria::Name);
+        assert_eq!(SortCriteria::Type, SortCriteria::Type);
+
+        assert_ne!(SortCriteria::Size, SortCriteria::Age);
+        assert_ne!(SortCriteria::Name, SortCriteria::Type);
+    }
+
+    #[test]
+    fn test_sort_criteria_copy() {
+        let original = SortCriteria::Size;
+        let copied = original;
+        assert_eq!(original, copied);
+    }
+
+    #[test]
+    fn test_sort_options_creation() {
+        let sort_opts = SortOptions {
+            criteria: Some(SortCriteria::Size),
+            reverse: false,
+        };
+        assert_eq!(sort_opts.criteria, Some(SortCriteria::Size));
+        assert!(!sort_opts.reverse);
+    }
+
+    #[test]
+    fn test_sort_options_none_criteria() {
+        let sort_opts = SortOptions {
+            criteria: None,
+            reverse: false,
+        };
+        assert!(sort_opts.criteria.is_none());
+    }
+
+    #[test]
+    fn test_sort_options_clone() {
+        let original = SortOptions {
+            criteria: Some(SortCriteria::Age),
+            reverse: true,
+        };
+        let cloned = original.clone();
+
+        assert_eq!(original.criteria, cloned.criteria);
+        assert_eq!(original.reverse, cloned.reverse);
     }
 }
