@@ -37,6 +37,7 @@ clean-dev-dirs --interactive
 - **Multi-language support**: Clean Rust (`target/`), Node.js (`node_modules/`), Python (cache dirs), and Go (`vendor/`) build artifacts
 - **Parallel scanning**: Lightning-fast directory traversal using multithreading
 - **Smart filtering**: Filter by project size, modification time, and project type
+- **Flexible sorting**: Sort results by size, age, name, or project type with `--sort`
 - **Interactive mode**: Choose which projects to clean with an intuitive interface
 - **Dry-run mode**: Preview what would be cleaned without actually deleting anything
 - **Progress indicators**: Real-time feedback during scanning and cleaning operations
@@ -126,6 +127,28 @@ clean-dev-dirs --keep-days 30
 
 # Combine size and time filters
 clean-dev-dirs --keep-size 50MB --keep-days 7
+```
+
+### Sorting
+
+```bash
+# Sort projects by size (largest first)
+clean-dev-dirs --sort size
+
+# Sort projects by age (oldest first)
+clean-dev-dirs --sort age
+
+# Sort projects by name (alphabetical)
+clean-dev-dirs --sort name
+
+# Sort projects grouped by type (Go, Node, Python, Rust)
+clean-dev-dirs --sort type
+
+# Reverse any sort order (e.g. smallest first)
+clean-dev-dirs --sort size --reverse
+
+# Combine with other options
+clean-dev-dirs ~/Projects --sort size --keep-size 50MB --dry-run
 ```
 
 ### Keeping Executables
@@ -263,6 +286,8 @@ dir = "~/Projects"
 [filtering]
 keep_size = "50MB"
 keep_days = 7
+sort = "size"       # "size", "age", "name", or "type"
+reverse = false
 
 [scanning]
 threads = 4
@@ -282,8 +307,8 @@ All fields are optional — only set what you need. An absent config file is sil
 
 | Value type | Behavior |
 |------------|----------|
-| Scalar (`keep_size`, `threads`, `project_type`, `dir`, …) | CLI wins if provided, otherwise config file, otherwise built-in default |
-| Boolean flag (`--dry-run`, `--verbose`, …) | `true` if the CLI flag is present **or** the config file sets it to `true` |
+| Scalar (`keep_size`, `threads`, `project_type`, `dir`, `sort`, …) | CLI wins if provided, otherwise config file, otherwise built-in default |
+| Boolean flag (`--dry-run`, `--verbose`, `--reverse`, …) | `true` if the CLI flag is present **or** the config file sets it to `true` |
 | List (`skip`, `ignore`) | **Merged** — config file entries first, then CLI entries appended |
 
 **Examples:**
@@ -331,12 +356,22 @@ clean-dev-dirs /large/directory --threads 16 --verbose
 clean-dev-dirs ~/Projects -p rust -k
 ```
 
-**7. Get a JSON report for a CI/CD dashboard:**
+**7. Find the biggest space hogs:**
+```bash
+clean-dev-dirs ~/Projects --sort size --dry-run
+```
+
+**8. Clean the most stale projects first:**
+```bash
+clean-dev-dirs ~/code --sort age --interactive
+```
+
+**9. Get a JSON report for a CI/CD dashboard:**
 ```bash
 clean-dev-dirs ~/Projects --json --dry-run | jq '.summary'
 ```
 
-**8. Set up a config file for your usual workflow:**
+**10. Set up a config file for your usual workflow:**
 ```bash
 mkdir -p ~/.config/clean-dev-dirs
 cat > ~/.config/clean-dev-dirs/config.toml << 'EOF'
@@ -374,6 +409,15 @@ clean-dev-dirs
 |--------|-------|-------------|
 | `--keep-size` | `-s` | Ignore projects with build dir smaller than specified size |
 | `--keep-days` | `-d` | Ignore projects modified in the last N days |
+
+### Sorting Options
+
+| Option | Values | Description |
+|--------|--------|-------------|
+| `--sort` | `size`, `age`, `name`, `type` | Sort projects before display (default: scan order) |
+| `--reverse` | | Reverse the sort order |
+
+Default sort directions: `size` largest first, `age` oldest first, `name` A-Z, `type` alphabetical by type name.
 
 ### Output Options
 

@@ -12,7 +12,9 @@ use std::path::PathBuf;
 use clap::{Parser, ValueEnum};
 
 use clean_dev_dirs::config::file::{FileConfig, expand_tilde};
-use clean_dev_dirs::config::{ExecutionOptions, FilterOptions, ProjectFilter, ScanOptions};
+use clean_dev_dirs::config::{
+    ExecutionOptions, FilterOptions, ProjectFilter, ScanOptions, SortCriteria, SortOptions,
+};
 
 /// Command-line arguments for filtering projects during cleanup.
 ///
@@ -36,6 +38,21 @@ struct FilteringArgs {
     /// skipped during cleanup. A value of 0 disables time-based filtering.
     #[arg(short = 'd', long)]
     keep_days: Option<u32>,
+
+    /// Sort projects by the given criterion before display
+    ///
+    /// Supported values: size (largest first), age (oldest first),
+    /// name (alphabetical), type (grouped by project type).
+    /// Use --reverse to flip the order.
+    #[arg(long, value_enum)]
+    sort: Option<SortCriteria>,
+
+    /// Reverse the sort order
+    ///
+    /// When used with --sort, reverses the default ordering direction.
+    /// For example, --sort size --reverse shows smallest projects first.
+    #[arg(long)]
+    reverse: bool,
 }
 
 /// Command-line arguments for controlling cleanup execution behavior.
@@ -314,6 +331,36 @@ impl Cli {
                 .unwrap_or(0),
         }
     }
+
+    /// Extract sorting options from CLI args and config file.
+    ///
+    /// Priority: CLI argument > config file > default (no sorting).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use clap::Parser;
+    /// # use clean_dev_dirs::config::{FileConfig, SortCriteria};
+    /// # mod cli { include!("cli.rs"); }
+    /// # use cli::Cli;
+    /// let args = Cli::parse_from(&["clean-dev-dirs", "--sort", "size", "--reverse"]);
+    /// let sort_opts = args.sort_options(&FileConfig::default());
+    /// assert_eq!(sort_opts.criteria, Some(SortCriteria::Size));
+    /// assert!(sort_opts.reverse);
+    /// ```
+    #[must_use]
+    pub fn sort_options(&self, config: &FileConfig) -> SortOptions {
+        SortOptions {
+            criteria: self.filtering.sort.or_else(|| {
+                config
+                    .filtering
+                    .sort
+                    .as_ref()
+                    .and_then(|s| SortCriteria::from_str(s, true).ok())
+            }),
+            reverse: self.filtering.reverse || config.filtering.reverse.unwrap_or(false),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -552,6 +599,7 @@ mod tests {
             filtering: FileFilterConfig {
                 keep_size: Some("50MB".to_string()),
                 keep_days: Some(7),
+                ..FileFilterConfig::default()
             },
             scanning: FileScanConfig {
                 threads: Some(4),
@@ -604,6 +652,7 @@ mod tests {
             filtering: FileFilterConfig {
                 keep_size: Some("50MB".to_string()),
                 keep_days: Some(7),
+                ..FileFilterConfig::default()
             },
             scanning: FileScanConfig {
                 threads: Some(4),
@@ -699,5 +748,154 @@ mod tests {
         };
 
         assert_eq!(args.project_filter(&config), ProjectFilter::All);
+    }
+
+    // ── Sorting option tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_sort_options_default() {
+        let args = Cli::parse_from(["clean-dev-dirs"]);
+        let config = FileConfig::default();
+        let sort_opts = args.sort_options(&config);
+
+        assert!(sort_opts.criteria.is_none());
+        assert!(!sort_opts.reverse);
+    }
+
+    #[test]
+    fn test_sort_options_cli_size() {
+        let args = Cli::parse_from(["clean-dev-dirs", "--sort", "size"]);
+        let config = FileConfig::default();
+        let sort_opts = args.sort_options(&config);
+
+        assert_eq!(sort_opts.criteria, Some(SortCriteria::Size));
+        assert!(!sort_opts.reverse);
+    }
+
+    #[test]
+    fn test_sort_options_cli_all_criteria() {
+        let config = FileConfig::default();
+
+        let test_cases = vec![
+            ("size", SortCriteria::Size),
+            ("age", SortCriteria::Age),
+            ("name", SortCriteria::Name),
+            ("type", SortCriteria::Type),
+        ];
+
+        for (input, expected) in test_cases {
+            let args = Cli::parse_from(["clean-dev-dirs", "--sort", input]);
+            let sort_opts = args.sort_options(&config);
+            assert_eq!(sort_opts.criteria, Some(expected));
+        }
+    }
+
+    #[test]
+    fn test_sort_options_with_reverse() {
+        let args = Cli::parse_from(["clean-dev-dirs", "--sort", "name", "--reverse"]);
+        let config = FileConfig::default();
+        let sort_opts = args.sort_options(&config);
+
+        assert_eq!(sort_opts.criteria, Some(SortCriteria::Name));
+        assert!(sort_opts.reverse);
+    }
+
+    #[test]
+    fn test_sort_options_reverse_only() {
+        let args = Cli::parse_from(["clean-dev-dirs", "--reverse"]);
+        let config = FileConfig::default();
+        let sort_opts = args.sort_options(&config);
+
+        assert!(sort_opts.criteria.is_none());
+        assert!(sort_opts.reverse);
+    }
+
+    #[test]
+    fn test_sort_options_from_config() {
+        let args = Cli::parse_from(["clean-dev-dirs"]);
+        let config = FileConfig {
+            filtering: FileFilterConfig {
+                sort: Some("age".to_string()),
+                reverse: Some(true),
+                ..FileFilterConfig::default()
+            },
+            ..FileConfig::default()
+        };
+        let sort_opts = args.sort_options(&config);
+
+        assert_eq!(sort_opts.criteria, Some(SortCriteria::Age));
+        assert!(sort_opts.reverse);
+    }
+
+    #[test]
+    fn test_sort_options_cli_overrides_config() {
+        let args = Cli::parse_from(["clean-dev-dirs", "--sort", "name"]);
+        let config = FileConfig {
+            filtering: FileFilterConfig {
+                sort: Some("size".to_string()),
+                ..FileFilterConfig::default()
+            },
+            ..FileConfig::default()
+        };
+        let sort_opts = args.sort_options(&config);
+
+        assert_eq!(sort_opts.criteria, Some(SortCriteria::Name));
+    }
+
+    #[test]
+    fn test_sort_options_invalid_config_falls_back_to_none() {
+        let args = Cli::parse_from(["clean-dev-dirs"]);
+        let config = FileConfig {
+            filtering: FileFilterConfig {
+                sort: Some("invalid_sort".to_string()),
+                ..FileFilterConfig::default()
+            },
+            ..FileConfig::default()
+        };
+        let sort_opts = args.sort_options(&config);
+
+        assert!(sort_opts.criteria.is_none());
+    }
+
+    #[test]
+    fn test_sort_options_config_case_insensitive() {
+        let args = Cli::parse_from(["clean-dev-dirs"]);
+        let config = FileConfig {
+            filtering: FileFilterConfig {
+                sort: Some("Size".to_string()),
+                ..FileFilterConfig::default()
+            },
+            ..FileConfig::default()
+        };
+        let sort_opts = args.sort_options(&config);
+
+        assert_eq!(sort_opts.criteria, Some(SortCriteria::Size));
+    }
+
+    #[test]
+    fn test_sort_reverse_cli_or_config() {
+        // CLI reverse=true overrides config reverse=false
+        let args = Cli::parse_from(["clean-dev-dirs", "--reverse"]);
+        let config = FileConfig {
+            filtering: FileFilterConfig {
+                reverse: Some(false),
+                ..FileFilterConfig::default()
+            },
+            ..FileConfig::default()
+        };
+        let sort_opts = args.sort_options(&config);
+        assert!(sort_opts.reverse);
+
+        // Config reverse=true used when CLI doesn't set it
+        let args_no_reverse = Cli::parse_from(["clean-dev-dirs"]);
+        let config_reverse = FileConfig {
+            filtering: FileFilterConfig {
+                reverse: Some(true),
+                ..FileFilterConfig::default()
+            },
+            ..FileConfig::default()
+        };
+        let sort_opts2 = args_no_reverse.sort_options(&config_reverse);
+        assert!(sort_opts2.reverse);
     }
 }

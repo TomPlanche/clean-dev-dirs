@@ -18,6 +18,8 @@
 //! [filtering]
 //! keep_size = "50MB"
 //! keep_days = 7
+//! sort = "size"
+//! reverse = false
 //!
 //! [scanning]
 //! threads = 4
@@ -68,6 +70,12 @@ pub struct FileFilterConfig {
 
     /// Minimum age in days
     pub keep_days: Option<u32>,
+
+    /// Sort criterion for project output (`"size"`, `"age"`, `"name"`, `"type"`)
+    pub sort: Option<String>,
+
+    /// Whether to reverse the sort order
+    pub reverse: Option<bool>,
 }
 
 /// Scanning options from the configuration file.
@@ -180,6 +188,8 @@ mod tests {
         assert!(config.dir.is_none());
         assert!(config.filtering.keep_size.is_none());
         assert!(config.filtering.keep_days.is_none());
+        assert!(config.filtering.sort.is_none());
+        assert!(config.filtering.reverse.is_none());
         assert!(config.scanning.threads.is_none());
         assert!(config.scanning.verbose.is_none());
         assert!(config.scanning.skip.is_none());
@@ -198,6 +208,8 @@ dir = "~/Projects"
 [filtering]
 keep_size = "50MB"
 keep_days = 7
+sort = "size"
+reverse = true
 
 [scanning]
 threads = 4
@@ -217,6 +229,8 @@ dry_run = false
         assert_eq!(config.dir, Some(PathBuf::from("~/Projects")));
         assert_eq!(config.filtering.keep_size, Some("50MB".to_string()));
         assert_eq!(config.filtering.keep_days, Some(7));
+        assert_eq!(config.filtering.sort, Some("size".to_string()));
+        assert_eq!(config.filtering.reverse, Some(true));
         assert_eq!(config.scanning.threads, Some(4));
         assert_eq!(config.scanning.verbose, Some(true));
         assert_eq!(
@@ -242,6 +256,8 @@ keep_size = "100MB"
         assert!(config.dir.is_none());
         assert_eq!(config.filtering.keep_size, Some("100MB".to_string()));
         assert!(config.filtering.keep_days.is_none());
+        assert!(config.filtering.sort.is_none());
+        assert!(config.filtering.reverse.is_none());
         assert!(config.scanning.threads.is_none());
     }
 
