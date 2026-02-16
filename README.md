@@ -6,7 +6,7 @@
  ▀█▄▄▀    ▀▄▄  ▀█▄▄▀  ▀▄▄▀█  █   █         ▀█▄██  ▀█▄▄▀    █           ▀█▄██  ▄▄█▄▄   █     ▀▄▄▄▀ 
 </pre>
 
-> A fast and efficient CLI tool for recursively cleaning Rust `target/`, Node.js `node_modules/`, Python cache, and Go `vendor/` directories to reclaim disk space.
+> A fast and efficient CLI tool for recursively cleaning development build directories across 8 language ecosystems to reclaim disk space. Supports Rust, Node.js, Python, Go, Java/Kotlin, C/C++, Swift, and .NET/C#.
 
 <p align="center">
   <a href="https://crates.io/crates/clean-dev-dirs"><img src="https://img.shields.io/crates/v/clean-dev-dirs.svg" alt="Crates.io Version"></a>
@@ -34,7 +34,7 @@ clean-dev-dirs --interactive
 
 ## Features
 
-- **Multi-language support**: Clean Rust (`target/`), Node.js (`node_modules/`), Python (cache dirs), and Go (`vendor/`) build artifacts
+- **Multi-language support**: Clean build artifacts across 8 ecosystems — Rust (`target/`), Node.js (`node_modules/`), Python (cache dirs), Go (`vendor/`), Java/Kotlin (`target/`/`build/`), C/C++ (`build/`), Swift (`.build/`), and .NET/C# (`bin/`+`obj/`)
 - **Parallel scanning**: Lightning-fast directory traversal using multithreading
 - **Smart filtering**: Filter by project size, modification time, and project type
 - **Flexible sorting**: Sort results by size, age, name, or project type with `--sort`
@@ -52,7 +52,7 @@ clean-dev-dirs --interactive
 
 This project is inspired by [cargo-clean-all](https://github.com/dnlmlr/cargo-clean-all), a Rust-specific tool for cleaning cargo projects. We've improved upon the original concept with:
 
-- **Multi-language support**: Extended beyond Rust to support Node.js, Python, and Go projects
+- **Multi-language support**: Extended beyond Rust to support Node.js, Python, Go, Java/Kotlin, C/C++, Swift, and .NET/C# projects
 - **Parallel scanning**: Significantly faster directory traversal using multithreading
 - **Enhanced filtering**: More granular control over what gets cleaned
 - **Cleaner code architecture**: Well-structured, modular codebase for better maintainability
@@ -113,6 +113,18 @@ clean-dev-dirs -p python
 # Clean only Go projects
 clean-dev-dirs -p go
 
+# Clean only Java/Kotlin projects
+clean-dev-dirs -p java
+
+# Clean only C/C++ projects
+clean-dev-dirs -p cpp
+
+# Clean only Swift projects
+clean-dev-dirs -p swift
+
+# Clean only .NET/C# projects
+clean-dev-dirs -p dotnet
+
 # Clean all project types (default)
 clean-dev-dirs -p all
 ```
@@ -172,7 +184,7 @@ When enabled, compiled outputs are copied to `<project>/bin/` before the build d
 
 - **Rust**: executables from `target/release/` and `target/debug/` are copied to `bin/release/` and `bin/debug/`
 - **Python**: `.whl` files from `dist/` and `.so`/`.pyd` C extensions from `build/` are copied to `bin/`
-- **Node.js / Go**: no-op (their cleaned directories contain dependencies, not build outputs)
+- **Node.js / Go / Java / C++ / Swift / .NET**: no-op (their cleaned directories contain dependencies or build outputs not easily preservable)
 
 ### Trash Support (Default)
 
@@ -430,7 +442,7 @@ clean-dev-dirs
 
 | Option | Short | Values | Description |
 |--------|-------|--------|-------------|
-| `--project-type` | `-p` | `all`, `rust`, `node`, `python`, `go` | Filter by project type (default: `all`) |
+| `--project-type` | `-p` | `all`, `rust`, `node`, `python`, `go`, `java`, `cpp`, `swift`, `dotnet` | Filter by project type (default: `all`) |
 
 ### Filtering Options
 
@@ -521,6 +533,28 @@ The tool automatically detects development projects by looking for characteristi
 - **Cleans**: `vendor/` directory
 - **Name extraction**: From module path in `go.mod`
 
+### Java/Kotlin Projects
+- **Detection criteria**:
+  - Maven: `pom.xml` + `target/` directory
+  - Gradle: `build.gradle` or `build.gradle.kts` + `build/` directory
+- **Cleans**: `target/` (Maven) or `build/` (Gradle) directory
+- **Name extraction**: From `<artifactId>` in `pom.xml`, or `rootProject.name` in `settings.gradle`
+
+### C/C++ Projects
+- **Detection criteria**: `CMakeLists.txt` or `Makefile` + `build/` directory
+- **Cleans**: `build/` directory
+- **Name extraction**: From `project()` in `CMakeLists.txt`, or falls back to directory name
+
+### Swift Projects
+- **Detection criteria**: Both `Package.swift` and `.build/` directory must exist
+- **Cleans**: `.build/` directory
+- **Name extraction**: From `name:` in `Package.swift`
+
+### .NET/C# Projects
+- **Detection criteria**: At least one `.csproj` file + `bin/` and/or `obj/` directories
+- **Cleans**: The larger of `bin/` or `obj/` directories
+- **Name extraction**: From the `.csproj` filename
+
 ## Safety Features
 
 - **Trash by default**: Directories are moved to the system trash for recoverable cleanups; use `--permanent` to override
@@ -541,6 +575,10 @@ The tool provides beautiful, colored output including:
 | 📦 | Node.js projects |
 | 🐍 | Python projects |
 | 🐹 | Go projects |
+| ☕ | Java/Kotlin projects |
+| ⚙️ | C/C++ projects |
+| 🐦 | Swift projects |
+| 🔷 | .NET/C# projects |
 
 ### Sample Output
 
@@ -659,12 +697,10 @@ Consider these when testing your implementation:
 
 Some languages that would be great additions:
 
-- **C/C++**: Look for `CMakeLists.txt`/`Makefile` + `build/` or `cmake-build-*/`
-- **Java**: Look for `pom.xml`/`build.gradle` + `target/` or `build/`
-- **C#**: Look for `*.csproj`/`*.sln` + `bin/`/`obj/`
 - **PHP**: Look for `composer.json` + `vendor/`
 - **Ruby**: Look for `Gemfile` + `vendor/bundle/`
-- **Swift**: Look for `Package.swift` + `.build/`
+- **Dart/Flutter**: Look for `pubspec.yaml` + `.dart_tool/` or `build/`
+- **Elixir**: Look for `mix.exs` + `_build/` or `deps/`
 
 #### 8. **Pull Request Guidelines**
 

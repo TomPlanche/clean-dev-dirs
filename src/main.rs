@@ -9,7 +9,7 @@
 //!
 //! ## Features
 //!
-//! - Multi-language support (Rust, Node.js, Python, and Go)
+//! - Multi-language support (Rust, Node.js, Python, Go, Java/Kotlin, C/C++, Swift, .NET/C#)
 //! - Parallel directory scanning
 //! - Size and time-based filtering
 //! - Interactive project selection

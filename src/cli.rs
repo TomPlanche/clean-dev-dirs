@@ -144,7 +144,9 @@ struct ScanningArgs {
 /// defaults when the corresponding CLI argument is not provided.
 #[derive(Parser)]
 #[command(name = "clean-dev-dirs")]
-#[command(about = "Recursively clean Rust, Node.js, Python, and Go development directories")]
+#[command(
+    about = "Recursively clean development build directories (Rust, Node.js, Python, Go, Java/Kotlin, C/C++, Swift, .NET/C#)"
+)]
 #[command(version)]
 #[command(author)]
 pub struct Cli {
@@ -155,7 +157,7 @@ pub struct Cli {
     #[arg()]
     dir: Option<PathBuf>,
 
-    /// Project type to clean (all, rust, node, python, go)
+    /// Project type to clean (all, rust, node, python, go, java, cpp, swift, dotnet)
     ///
     /// Restricts cleaning to specific project types. If not specified, all
     /// supported project types will be considered.
@@ -421,6 +423,18 @@ mod tests {
 
         let go_args = Cli::parse_from(["clean-dev-dirs", "--project-type", "go"]);
         assert_eq!(go_args.project_filter(&config), ProjectFilter::Go);
+
+        let java_args = Cli::parse_from(["clean-dev-dirs", "--project-type", "java"]);
+        assert_eq!(java_args.project_filter(&config), ProjectFilter::Java);
+
+        let cpp_args = Cli::parse_from(["clean-dev-dirs", "--project-type", "cpp"]);
+        assert_eq!(cpp_args.project_filter(&config), ProjectFilter::Cpp);
+
+        let swift_args = Cli::parse_from(["clean-dev-dirs", "--project-type", "swift"]);
+        assert_eq!(swift_args.project_filter(&config), ProjectFilter::Swift);
+
+        let dotnet_args = Cli::parse_from(["clean-dev-dirs", "--project-type", "dotnet"]);
+        assert_eq!(dotnet_args.project_filter(&config), ProjectFilter::DotNet);
 
         let all_args = Cli::parse_from(["clean-dev-dirs"]);
         assert_eq!(all_args.project_filter(&config), ProjectFilter::All);
