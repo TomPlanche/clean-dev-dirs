@@ -16,6 +16,28 @@ use std::sync::{Arc, Mutex};
 use crate::executables;
 use crate::project::{Project, Projects};
 
+/// Strategy for removing build directories.
+#[derive(Clone, Copy)]
+pub enum RemovalStrategy {
+    /// Permanently delete the directory (default, uses `fs::remove_dir_all`).
+    Permanent,
+
+    /// Move the directory to the system trash (recoverable deletion).
+    Trash,
+}
+
+impl RemovalStrategy {
+    /// Create a removal strategy from the `use_trash` boolean flag.
+    #[must_use]
+    pub const fn from_use_trash(use_trash: bool) -> Self {
+        if use_trash {
+            Self::Trash
+        } else {
+            Self::Permanent
+        }
+    }
+}
+
 /// Structured result returned after a cleanup operation.
 ///
 /// Contains all the data needed to render either human-readable or JSON output.
@@ -72,6 +94,7 @@ impl Cleaner {
     /// * `keep_executables` - Whether to preserve compiled executables before cleaning
     /// * `quiet` - When `true`, suppresses all human-readable output (progress bars, messages).
     ///   Used by the `--json` flag so that only the final JSON is printed.
+    /// * `removal_strategy` - Whether to permanently delete or move to system trash
     ///
     /// # Panics
     ///
@@ -96,14 +119,23 @@ impl Cleaner {
     /// All errors are collected and reported in the returned [`CleanResult`],
     /// allowing the cleanup to proceed for projects that can be successfully processed.
     #[must_use]
-    pub fn clean_projects(projects: Projects, keep_executables: bool, quiet: bool) -> CleanResult {
+    pub fn clean_projects(
+        projects: Projects,
+        keep_executables: bool,
+        quiet: bool,
+        removal_strategy: RemovalStrategy,
+    ) -> CleanResult {
         let total_projects = projects.len();
         let total_size: u64 = projects.get_total_size();
 
         let progress = if quiet {
             ProgressBar::hidden()
         } else {
-            println!("\n{}", "🧹 Starting cleanup...".cyan());
+            let action = match removal_strategy {
+                RemovalStrategy::Permanent => "🧹 Starting cleanup...",
+                RemovalStrategy::Trash => "🗑️  Moving to trash...",
+            };
+            println!("\n{}", action.cyan());
 
             let pb = ProgressBar::new(total_projects as u64);
             pb.set_style(
@@ -120,14 +152,19 @@ impl Cleaner {
 
         // Clean projects in parallel
         projects.into_par_iter().for_each(|project| {
-            let result = clean_single_project(&project, keep_executables);
+            let result = clean_single_project(&project, keep_executables, removal_strategy);
+
+            let action = match removal_strategy {
+                RemovalStrategy::Permanent => "Cleaned",
+                RemovalStrategy::Trash => "Trashed",
+            };
 
             match result {
                 Ok(freed_size) => {
                     *cleaned_size.lock().unwrap() += freed_size;
 
                     progress.set_message(format!(
-                        "Cleaned {} ({})",
+                        "{action} {} ({})",
                         project
                             .root_path
                             .file_name()
@@ -147,7 +184,11 @@ impl Cleaner {
             progress.inc(1);
         });
 
-        progress.finish_with_message("✅ Cleanup complete");
+        let finish_msg = match removal_strategy {
+            RemovalStrategy::Permanent => "✅ Cleanup complete",
+            RemovalStrategy::Trash => "✅ Moved to trash",
+        };
+        progress.finish_with_message(finish_msg);
 
         let final_cleaned_size = *cleaned_size.lock().unwrap();
         let errors = Arc::try_unwrap(errors)
@@ -210,11 +251,13 @@ impl Cleaner {
 ///
 /// This function handles the cleanup of an individual project's build directory.
 /// It calculates the actual size before deletion and then removes the entire
-/// directory tree.
+/// directory tree, either permanently or by moving it to the system trash.
 ///
 /// # Arguments
 ///
 /// * `project` - The project whose build directory should be cleaned
+/// * `keep_executables` - Whether to preserve compiled executables before cleaning
+/// * `removal_strategy` - Whether to permanently delete or move to system trash
 ///
 /// # Returns
 ///
@@ -224,9 +267,10 @@ impl Cleaner {
 /// # Behavior
 ///
 /// 1. Checks if the build directory exists (returns 0 if not)
-/// 2. Calculates the actual size of the directory before deletion
-/// 3. Removes the entire directory tree
-/// 4. Returns the amount of space freed
+/// 2. Optionally preserves compiled executables
+/// 3. Calculates the actual size of the directory before deletion
+/// 4. Removes the directory (permanently or via trash, based on `removal_strategy`)
+/// 5. Returns the amount of space freed
 ///
 /// # Error Conditions
 ///
@@ -234,19 +278,12 @@ impl Cleaner {
 /// - The build directory cannot be removed due to permission issues
 /// - Files within the directory are locked or in use by other processes
 /// - The file system encounters I/O errors during deletion
-///
-/// # Examples
-///
-/// ```
-/// # use crate::{Project, clean_single_project};
-/// # use anyhow::Result;
-/// let result = clean_single_project(&project);
-/// match result {
-///     Ok(freed_bytes) => println!("Freed {} bytes", freed_bytes),
-///     Err(e) => eprintln!("Cleanup failed: {}", e),
-/// }
-/// ```
-fn clean_single_project(project: &Project, keep_executables: bool) -> Result<u64> {
+/// - The system trash is not available (when using [`RemovalStrategy::Trash`])
+fn clean_single_project(
+    project: &Project,
+    keep_executables: bool,
+    removal_strategy: RemovalStrategy,
+) -> Result<u64> {
     let build_dir = &project.build_arts.path;
 
     if !build_dir.exists() {
@@ -281,8 +318,14 @@ fn clean_single_project(project: &Project, keep_executables: bool) -> Result<u64
     // Get the actual size before deletion (might be different from the cached size)
     let actual_size = calculate_directory_size(build_dir);
 
-    // Remove the build directory
-    fs::remove_dir_all(build_dir)?;
+    // Remove the build directory using the chosen strategy
+    match removal_strategy {
+        RemovalStrategy::Permanent => fs::remove_dir_all(build_dir)?,
+        RemovalStrategy::Trash => {
+            trash::delete(build_dir)
+                .map_err(|e| anyhow::anyhow!("failed to move to trash: {e}"))?;
+        }
+    }
 
     Ok(actual_size)
 }

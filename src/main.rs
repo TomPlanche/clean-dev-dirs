@@ -35,7 +35,7 @@ mod cli;
 use anyhow::{Ok, Result, bail};
 use clap::Parser;
 use clean_dev_dirs::{
-    cleaner::Cleaner,
+    cleaner::{Cleaner, RemovalStrategy},
     config::FileConfig,
     filtering::{filter_projects, sort_projects},
     output::JsonOutput,
@@ -202,8 +202,10 @@ fn inner_main() -> Result<()> {
     }
 
     // Actual cleanup
+    let removal_strategy = RemovalStrategy::from_use_trash(execution_options.use_trash);
     let project_snapshot: Vec<_> = projects.as_slice().to_vec();
-    let clean_result = Cleaner::clean_projects(projects, keep_executables, json_mode);
+    let clean_result =
+        Cleaner::clean_projects(projects, keep_executables, json_mode, removal_strategy);
 
     if json_mode {
         let output = JsonOutput::from_projects_cleanup(&project_snapshot, &clean_result);

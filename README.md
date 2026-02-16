@@ -42,6 +42,7 @@ clean-dev-dirs --interactive
 - **Dry-run mode**: Preview what would be cleaned without actually deleting anything
 - **Progress indicators**: Real-time feedback during scanning and cleaning operations
 - **Executable preservation**: Keep compiled binaries before cleaning with `--keep-executables`
+- **Safe by default**: Moves directories to the system trash for recoverable deletions; use `--permanent` when you want `rm -rf`
 - **JSON output**: Structured `--json` output for scripting, piping, and dashboard integration
 - **Detailed statistics**: See total space that can be reclaimed before cleaning
 - **Persistent configuration**: Set defaults in `~/.config/clean-dev-dirs/config.toml` so you don't repeat flags
@@ -173,6 +174,28 @@ When enabled, compiled outputs are copied to `<project>/bin/` before the build d
 - **Python**: `.whl` files from `dist/` and `.so`/`.pyd` C extensions from `build/` are copied to `bin/`
 - **Node.js / Go**: no-op (their cleaned directories contain dependencies, not build outputs)
 
+### Trash Support (Default)
+
+By default, build directories are moved to the system trash (Trash on macOS/Linux, Recycle Bin on Windows) instead of being permanently removed. This means all deletions are recoverable -- just check your trash.
+
+```bash
+# Default behavior: moves to trash (safe, recoverable)
+clean-dev-dirs
+
+# Permanently delete instead (rm -rf style, irreversible)
+clean-dev-dirs --permanent
+
+# Combine permanent deletion with other options
+clean-dev-dirs --permanent --keep-executables -y
+```
+
+To make permanent deletion the default, set `use_trash = false` in your config file:
+
+```toml
+[execution]
+use_trash = false
+```
+
 ### JSON Output
 
 Use `--json` to get structured output for scripting, piping to `jq`, or feeding into dashboards:
@@ -299,6 +322,7 @@ ignore = [".git"]
 keep_executables = true
 interactive = false
 dry_run = false
+use_trash = true          # default; set to false for permanent deletion
 ```
 
 All fields are optional — only set what you need. An absent config file is silently ignored; a malformed one produces an error message.
@@ -371,7 +395,12 @@ clean-dev-dirs ~/code --sort age --interactive
 clean-dev-dirs ~/Projects --json --dry-run | jq '.summary'
 ```
 
-**10. Set up a config file for your usual workflow:**
+**10. Permanently delete (skip the trash):**
+```bash
+clean-dev-dirs ~/Projects --permanent --yes
+```
+
+**11. Set up a config file for your usual workflow:**
 ```bash
 mkdir -p ~/.config/clean-dev-dirs
 cat > ~/.config/clean-dev-dirs/config.toml << 'EOF'
@@ -433,6 +462,7 @@ Default sort directions: `size` largest first, `age` oldest first, `name` A-Z, `
 | `--dry-run` | | List cleanable projects without actually cleaning |
 | `--interactive` | `-i` | Use interactive project selection |
 | `--keep-executables` | `-k` | Copy compiled executables to `<project>/bin/` before cleaning |
+| `--permanent` | | Permanently delete directories instead of moving them to the system trash |
 
 ### Scanning Options
 
@@ -493,6 +523,7 @@ The tool automatically detects development projects by looking for characteristi
 
 ## Safety Features
 
+- **Trash by default**: Directories are moved to the system trash for recoverable cleanups; use `--permanent` to override
 - **Dry-run mode**: Preview all operations before execution with `--dry-run`
 - **Interactive confirmation**: Manually select projects to clean with `--interactive`
 - **Intelligent filtering**: Skip recently modified or small projects with `--keep-days` and `--keep-size`
@@ -667,6 +698,7 @@ Built with excellent open-source libraries:
 - [Humansize](https://crates.io/crates/humansize) - Human-readable file sizes
 - [Serde](https://crates.io/crates/serde) + [serde_json](https://crates.io/crates/serde_json) + [TOML](https://crates.io/crates/toml) - Serialization, JSON output, and configuration file parsing
 - [dirs](https://crates.io/crates/dirs) - Cross-platform config directory resolution
+- [trash](https://crates.io/crates/trash) - Cross-platform system trash support
 
 ## Support
 

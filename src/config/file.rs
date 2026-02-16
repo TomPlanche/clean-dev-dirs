@@ -31,6 +31,7 @@
 //! keep_executables = true
 //! interactive = false
 //! dry_run = false
+//! use_trash = true    # default; set to false for permanent deletion
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -105,6 +106,10 @@ pub struct FileExecutionConfig {
 
     /// Whether to run in dry-run mode
     pub dry_run: Option<bool>,
+
+    /// Whether to move directories to the system trash instead of permanently deleting them.
+    /// Defaults to `true` when absent. Set to `false` for permanent deletion.
+    pub use_trash: Option<bool>,
 }
 
 /// Expand a leading `~` in a path to the user's home directory.
@@ -197,6 +202,7 @@ mod tests {
         assert!(config.execution.keep_executables.is_none());
         assert!(config.execution.interactive.is_none());
         assert!(config.execution.dry_run.is_none());
+        assert!(config.execution.use_trash.is_none());
     }
 
     #[test]
@@ -221,6 +227,7 @@ ignore = [".git"]
 keep_executables = true
 interactive = false
 dry_run = false
+use_trash = true
 "#;
 
         let config: FileConfig = toml::from_str(toml_content).unwrap();
@@ -241,6 +248,7 @@ dry_run = false
         assert_eq!(config.execution.keep_executables, Some(true));
         assert_eq!(config.execution.interactive, Some(false));
         assert_eq!(config.execution.dry_run, Some(false));
+        assert_eq!(config.execution.use_trash, Some(true));
     }
 
     #[test]
