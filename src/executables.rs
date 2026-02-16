@@ -5,7 +5,6 @@
 //! users to retain usable binaries while still reclaiming build artifact space.
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -14,6 +13,25 @@ use crate::project::{Project, ProjectType};
 
 /// Extensions to exclude when looking for Rust executables.
 const RUST_EXCLUDED_EXTENSIONS: &[&str] = &["d", "rmeta", "rlib", "a", "so", "dylib", "dll", "pdb"];
+
+/// Check whether a file is an executable binary.
+///
+/// On Unix, this inspects the permission bits for the executable flag.
+/// On Windows, this checks for the `.exe` file extension.
+#[cfg(unix)]
+fn is_executable(path: &Path, metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    let _ = path; // unused on Unix – we rely on permission bits
+    metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(windows)]
+fn is_executable(path: &Path, _metadata: &fs::Metadata) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+}
 
 /// A record of a single preserved executable file.
 #[derive(Debug)]
@@ -92,9 +110,9 @@ fn preserve_rust_executables(project: &Project) -> Result<Vec<PreservedExecutabl
 
 /// Find executable files in a Rust profile directory (e.g. `target/release/`).
 ///
-/// Returns files that are executable (`mode & 0o111 != 0`) and are not
-/// build metadata (excludes `.d`, `.rmeta`, `.rlib`, `.a`, `.so`, `.dylib`,
-/// `.dll`, `.pdb` extensions).
+/// Returns files that pass [`is_executable`] and are not build metadata
+/// (excludes `.d`, `.rmeta`, `.rlib`, `.a`, `.so`, `.dylib`, `.dll`, `.pdb`
+/// extensions).
 fn find_rust_executables(profile_dir: &Path) -> Result<Vec<PathBuf>> {
     let mut executables = Vec::new();
 
@@ -118,7 +136,7 @@ fn find_rust_executables(profile_dir: &Path) -> Result<Vec<PathBuf>> {
 
         // Check if file is executable
         let metadata = path.metadata()?;
-        if metadata.permissions().mode() & 0o111 != 0 {
+        if is_executable(&path, &metadata) {
             executables.push(path);
         }
     }
@@ -209,7 +227,6 @@ fn preserve_python_executables(project: &Project) -> Result<Vec<PreservedExecuta
 mod tests {
     use super::*;
     use crate::project::BuildArtifacts;
-    use std::os::unix::fs::PermissionsExt;
     use tempfile::TempDir;
 
     fn create_test_project(tmp: &TempDir, kind: ProjectType) -> Project {
@@ -235,7 +252,10 @@ mod tests {
     }
 
     #[test]
-    fn test_preserve_rust_executables() {
+    #[cfg(unix)]
+    fn test_preserve_rust_executables_unix() {
+        use std::os::unix::fs::PermissionsExt;
+
         let tmp = TempDir::new().unwrap();
         let project = create_test_project(&tmp, ProjectType::Rust);
 
@@ -261,7 +281,36 @@ mod tests {
     }
 
     #[test]
-    fn test_preserve_rust_skips_non_executable() {
+    #[cfg(windows)]
+    fn test_preserve_rust_executables_windows() {
+        let tmp = TempDir::new().unwrap();
+        let project = create_test_project(&tmp, ProjectType::Rust);
+
+        let release_dir = tmp.path().join("target/release");
+        fs::create_dir_all(&release_dir).unwrap();
+
+        // On Windows, executables have the .exe extension
+        let exe_path = release_dir.join("my-binary.exe");
+        fs::write(&exe_path, b"fake binary").unwrap();
+
+        let dep_file = release_dir.join("my-binary.d");
+        fs::write(&dep_file, b"dep info").unwrap();
+
+        let result = preserve_executables(&project).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].destination,
+            tmp.path().join("bin/release/my-binary.exe")
+        );
+        assert!(result[0].destination.exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_preserve_rust_skips_non_executable_unix() {
+        use std::os::unix::fs::PermissionsExt;
+
         let tmp = TempDir::new().unwrap();
         let project = create_test_project(&tmp, ProjectType::Rust);
 
@@ -272,6 +321,23 @@ mod tests {
         let non_exe = release_dir.join("some-file");
         fs::write(&non_exe, b"not executable").unwrap();
         fs::set_permissions(&non_exe, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let result = preserve_executables(&project).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_preserve_rust_skips_non_executable_windows() {
+        let tmp = TempDir::new().unwrap();
+        let project = create_test_project(&tmp, ProjectType::Rust);
+
+        let release_dir = tmp.path().join("target/release");
+        fs::create_dir_all(&release_dir).unwrap();
+
+        // On Windows, a file without .exe extension is not treated as executable
+        let non_exe = release_dir.join("some-file.txt");
+        fs::write(&non_exe, b"not executable").unwrap();
 
         let result = preserve_executables(&project).unwrap();
         assert!(result.is_empty());
