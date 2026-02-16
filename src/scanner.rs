@@ -285,6 +285,10 @@ impl Scanner {
     /// - **Node.js projects**: Presence of both `package.json` and `node_modules/` directory
     /// - **Python projects**: Presence of configuration files and cache directories
     /// - **Go projects**: Presence of both `go.mod` and `vendor/` directory
+    /// - **Java/Kotlin projects**: Presence of `pom.xml` or `build.gradle` with `target/` or `build/`
+    /// - **C/C++ projects**: Presence of `CMakeLists.txt` or `Makefile` with `build/`
+    /// - **Swift projects**: Presence of `Package.swift` with `.build/`
+    /// - **.NET/C# projects**: Presence of `.csproj` files with `bin/` or `obj/`
     fn detect_project(
         &self,
         entry: &DirEntry,
@@ -296,41 +300,51 @@ impl Scanner {
             return None;
         }
 
-        // Check for a Rust project
-        if matches!(
-            self.project_filter,
-            ProjectFilter::All | ProjectFilter::Rust
-        ) && let Some(project) = self.detect_rust_project(path, errors)
-        {
-            return Some(project);
-        }
+        // Detectors are tried in order; the first match wins.
+        // More specific ecosystems are checked before more generic ones
+        // (e.g. Java before C/C++, since both can use `build/`).
+        self.try_detect(ProjectFilter::Rust, || {
+            self.detect_rust_project(path, errors)
+        })
+        .or_else(|| {
+            self.try_detect(ProjectFilter::Node, || {
+                self.detect_node_project(path, errors)
+            })
+        })
+        .or_else(|| {
+            self.try_detect(ProjectFilter::Java, || {
+                self.detect_java_project(path, errors)
+            })
+        })
+        .or_else(|| {
+            self.try_detect(ProjectFilter::Swift, || {
+                self.detect_swift_project(path, errors)
+            })
+        })
+        .or_else(|| self.try_detect(ProjectFilter::DotNet, || Self::detect_dotnet_project(path)))
+        .or_else(|| {
+            self.try_detect(ProjectFilter::Python, || {
+                self.detect_python_project(path, errors)
+            })
+        })
+        .or_else(|| self.try_detect(ProjectFilter::Go, || self.detect_go_project(path, errors)))
+        .or_else(|| self.try_detect(ProjectFilter::Cpp, || self.detect_cpp_project(path, errors)))
+    }
 
-        // Check for a Node.js project
-        if matches!(
-            self.project_filter,
-            ProjectFilter::All | ProjectFilter::Node
-        ) && let Some(project) = self.detect_node_project(path, errors)
-        {
-            return Some(project);
+    /// Run a detector only if the current project filter allows it.
+    ///
+    /// Returns `None` immediately (without calling `detect`) when the
+    /// active filter doesn't include `filter`.
+    fn try_detect(
+        &self,
+        filter: ProjectFilter,
+        detect: impl FnOnce() -> Option<Project>,
+    ) -> Option<Project> {
+        if self.project_filter == ProjectFilter::All || self.project_filter == filter {
+            detect()
+        } else {
+            None
         }
-
-        // Check for a Python project
-        if matches!(
-            self.project_filter,
-            ProjectFilter::All | ProjectFilter::Python
-        ) && let Some(project) = self.detect_python_project(path, errors)
-        {
-            return Some(project);
-        }
-
-        // Check for a Go project
-        if matches!(self.project_filter, ProjectFilter::All | ProjectFilter::Go)
-            && let Some(project) = self.detect_go_project(path, errors)
-        {
-            return Some(project);
-        }
-
-        None
     }
 
     /// Detect a Rust project in the specified directory.
@@ -562,6 +576,7 @@ impl Scanner {
     /// - Python setuptools
     /// - Python coverage files
     /// - Node.js modules (already handled above but added for completeness)
+    /// - .NET `obj/` directory
     fn should_scan_entry(&self, entry: &DirEntry) -> bool {
         let path = entry.path();
 
@@ -629,6 +644,7 @@ impl Scanner {
             ".eggs",
             ".coverage",
             "node_modules",
+            "obj",
         ];
 
         path.file_name()
@@ -935,9 +951,318 @@ impl Scanner {
         None
     }
 
+    /// Detect a Java/Kotlin project in the specified directory.
+    ///
+    /// This method checks for Maven (`pom.xml`) or Gradle (`build.gradle`,
+    /// `build.gradle.kts`) configuration files and their associated build output
+    /// directories (`target/` for Maven, `build/` for Gradle).
+    ///
+    /// # Detection Criteria
+    ///
+    /// 1. `pom.xml` + `target/` directory (Maven)
+    /// 2. `build.gradle` or `build.gradle.kts` + `build/` directory (Gradle)
+    fn detect_java_project(
+        &self,
+        path: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<Project> {
+        let pom_xml = path.join("pom.xml");
+        let target_dir = path.join("target");
+
+        // Maven project: pom.xml + target/
+        if pom_xml.exists() && target_dir.exists() {
+            let name = self.extract_java_maven_project_name(&pom_xml, errors);
+
+            let build_arts = BuildArtifacts {
+                path: target_dir,
+                size: 0,
+            };
+
+            return Some(Project::new(
+                ProjectType::Java,
+                path.to_path_buf(),
+                build_arts,
+                name,
+            ));
+        }
+
+        // Gradle project: build.gradle(.kts) + build/
+        let has_gradle =
+            path.join("build.gradle").exists() || path.join("build.gradle.kts").exists();
+        let build_dir = path.join("build");
+
+        if has_gradle && build_dir.exists() {
+            let name = self.extract_java_gradle_project_name(path, errors);
+
+            let build_arts = BuildArtifacts {
+                path: build_dir,
+                size: 0,
+            };
+
+            return Some(Project::new(
+                ProjectType::Java,
+                path.to_path_buf(),
+                build_arts,
+                name,
+            ));
+        }
+
+        None
+    }
+
+    /// Extract the project name from a Maven `pom.xml` file.
+    ///
+    /// Looks for `<artifactId>` tags and extracts the text content.
+    fn extract_java_maven_project_name(
+        &self,
+        pom_xml: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<String> {
+        let content = self.read_file_content(pom_xml, errors)?;
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("<artifactId>") && trimmed.ends_with("</artifactId>") {
+                let name = trimmed
+                    .strip_prefix("<artifactId>")?
+                    .strip_suffix("</artifactId>")?;
+                return Some(name.to_string());
+            }
+        }
+
+        None
+    }
+
+    /// Extract the project name from a Gradle project.
+    ///
+    /// Looks for `settings.gradle` or `settings.gradle.kts` and extracts
+    /// the `rootProject.name` value. Falls back to directory name.
+    fn extract_java_gradle_project_name(
+        &self,
+        path: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<String> {
+        for settings_file in &["settings.gradle", "settings.gradle.kts"] {
+            let settings_path = path.join(settings_file);
+            if settings_path.exists()
+                && let Some(content) = self.read_file_content(&settings_path, errors)
+            {
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.contains("rootProject.name") && trimmed.contains('=') {
+                        return Self::extract_quoted_value(trimmed).or_else(|| {
+                            trimmed
+                                .split('=')
+                                .nth(1)
+                                .map(|s| s.trim().trim_matches('\'').to_string())
+                        });
+                    }
+                }
+            }
+        }
+
+        Self::fallback_to_directory_name(path)
+    }
+
+    /// Detect a C/C++ project in the specified directory.
+    ///
+    /// This method checks for `CMakeLists.txt` or `Makefile` alongside a `build/`
+    /// directory to identify C/C++ projects.
+    ///
+    /// # Detection Criteria
+    ///
+    /// 1. `CMakeLists.txt` + `build/` directory (`CMake`)
+    /// 2. `Makefile` + `build/` directory (`Make`)
+    fn detect_cpp_project(&self, path: &Path, errors: &Arc<Mutex<Vec<String>>>) -> Option<Project> {
+        let build_dir = path.join("build");
+
+        if !build_dir.exists() {
+            return None;
+        }
+
+        let cmake_file = path.join("CMakeLists.txt");
+        let makefile = path.join("Makefile");
+
+        if cmake_file.exists() || makefile.exists() {
+            let name = if cmake_file.exists() {
+                self.extract_cpp_cmake_project_name(&cmake_file, errors)
+            } else {
+                Self::fallback_to_directory_name(path)
+            };
+
+            let build_arts = BuildArtifacts {
+                path: build_dir,
+                size: 0,
+            };
+
+            return Some(Project::new(
+                ProjectType::Cpp,
+                path.to_path_buf(),
+                build_arts,
+                name,
+            ));
+        }
+
+        None
+    }
+
+    /// Extract the project name from a `CMakeLists.txt` file.
+    ///
+    /// Looks for `project(name` patterns and extracts the project name.
+    fn extract_cpp_cmake_project_name(
+        &self,
+        cmake_file: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<String> {
+        let content = self.read_file_content(cmake_file, errors)?;
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("project(") || trimmed.starts_with("PROJECT(") {
+                let inner = trimmed
+                    .trim_start_matches("project(")
+                    .trim_start_matches("PROJECT(")
+                    .trim_end_matches(')')
+                    .trim();
+
+                // The project name is the first word/token
+                let name = inner.split_whitespace().next()?;
+                // Remove possible surrounding quotes
+                let name = name.trim_matches('"').trim_matches('\'');
+                if !name.is_empty() {
+                    return Some(name.to_string());
+                }
+            }
+        }
+
+        Self::fallback_to_directory_name(cmake_file.parent()?)
+    }
+
+    /// Detect a Swift project in the specified directory.
+    ///
+    /// This method checks for a `Package.swift` manifest and the `.build/`
+    /// directory to identify Swift Package Manager projects.
+    ///
+    /// # Detection Criteria
+    ///
+    /// 1. `Package.swift` file exists
+    /// 2. `.build/` directory exists
+    fn detect_swift_project(
+        &self,
+        path: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<Project> {
+        let package_swift = path.join("Package.swift");
+        let build_dir = path.join(".build");
+
+        if package_swift.exists() && build_dir.exists() {
+            let name = self.extract_swift_project_name(&package_swift, errors);
+
+            let build_arts = BuildArtifacts {
+                path: build_dir,
+                size: 0,
+            };
+
+            return Some(Project::new(
+                ProjectType::Swift,
+                path.to_path_buf(),
+                build_arts,
+                name,
+            ));
+        }
+
+        None
+    }
+
+    /// Extract the project name from a `Package.swift` file.
+    ///
+    /// Looks for `name:` inside the `Package(` initializer.
+    fn extract_swift_project_name(
+        &self,
+        package_swift: &Path,
+        errors: &Arc<Mutex<Vec<String>>>,
+    ) -> Option<String> {
+        let content = self.read_file_content(package_swift, errors)?;
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.contains("name:") {
+                return Self::extract_quoted_value(trimmed);
+            }
+        }
+
+        Self::fallback_to_directory_name(package_swift.parent()?)
+    }
+
+    /// Detect a .NET/C# project in the specified directory.
+    ///
+    /// This method checks for `.csproj` files alongside `bin/` and/or `obj/`
+    /// directories to identify .NET projects.
+    ///
+    /// # Detection Criteria
+    ///
+    /// 1. At least one `.csproj` file exists in the directory
+    /// 2. At least one of `bin/` or `obj/` directories exists
+    fn detect_dotnet_project(path: &Path) -> Option<Project> {
+        let bin_dir = path.join("bin");
+        let obj_dir = path.join("obj");
+
+        let has_build_dir = bin_dir.exists() || obj_dir.exists();
+        if !has_build_dir {
+            return None;
+        }
+
+        let csproj_file = Self::find_file_with_extension(path, "csproj")?;
+
+        // Pick the larger of bin/ and obj/ as the primary build artifact
+        let build_path = match (bin_dir.exists(), obj_dir.exists()) {
+            (true, true) => {
+                let bin_size = Self::calculate_directory_size(&bin_dir).unwrap_or(0);
+                let obj_size = Self::calculate_directory_size(&obj_dir).unwrap_or(0);
+                if obj_size >= bin_size {
+                    obj_dir
+                } else {
+                    bin_dir
+                }
+            }
+            (true, false) => bin_dir,
+            (false, true) => obj_dir,
+            (false, false) => return None,
+        };
+
+        let name = csproj_file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(std::string::ToString::to_string);
+
+        let build_arts = BuildArtifacts {
+            path: build_path,
+            size: 0,
+        };
+
+        Some(Project::new(
+            ProjectType::DotNet,
+            path.to_path_buf(),
+            build_arts,
+            name,
+        ))
+    }
+
+    /// Find the first file with a given extension in a directory.
+    fn find_file_with_extension(dir: &Path, extension: &str) -> Option<std::path::PathBuf> {
+        let entries = fs::read_dir(dir).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some(extension) {
+                return Some(path);
+            }
+        }
+        None
+    }
+
     /// Calculate the size of a directory recursively.
     ///
-    /// This is a helper method used for Python projects to determine which
+    /// This is a helper method used for Python and .NET projects to determine which
     /// cache directory is the largest and should be the primary cleanup target.
     fn calculate_directory_size(dir_path: &Path) -> std::io::Result<u64> {
         let mut total_size = 0;
@@ -1377,6 +1702,178 @@ mod tests {
         assert_eq!(projects.len(), 1);
         // Should extract last path component as name
         assert_eq!(projects[0].name.as_deref(), Some("my-service"));
+    }
+
+    // ── Java/Kotlin project detection tests ────────────────────────────
+
+    #[test]
+    fn test_detect_java_maven_project() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        let project = base.join("java-maven");
+        create_file(
+            &project.join("pom.xml"),
+            "<project>\n  <artifactId>my-java-app</artifactId>\n</project>",
+        );
+        create_file(&project.join("target/classes/Main.class"), "bytecode");
+
+        let scanner = default_scanner(ProjectFilter::Java);
+        let projects = scanner.scan_directory(base);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].kind, ProjectType::Java);
+        assert_eq!(projects[0].name.as_deref(), Some("my-java-app"));
+    }
+
+    #[test]
+    fn test_detect_java_gradle_project() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        let project = base.join("java-gradle");
+        create_file(&project.join("build.gradle"), "apply plugin: 'java'");
+        create_file(
+            &project.join("settings.gradle"),
+            "rootProject.name = \"my-gradle-app\"",
+        );
+        create_file(&project.join("build/classes/main/Main.class"), "bytecode");
+
+        let scanner = default_scanner(ProjectFilter::Java);
+        let projects = scanner.scan_directory(base);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].kind, ProjectType::Java);
+        assert_eq!(projects[0].name.as_deref(), Some("my-gradle-app"));
+    }
+
+    #[test]
+    fn test_detect_java_gradle_kts_project() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        let project = base.join("kotlin-gradle");
+        create_file(
+            &project.join("build.gradle.kts"),
+            "plugins { kotlin(\"jvm\") }",
+        );
+        create_file(
+            &project.join("settings.gradle.kts"),
+            "rootProject.name = \"my-kotlin-app\"",
+        );
+        create_file(
+            &project.join("build/classes/kotlin/main/MainKt.class"),
+            "bytecode",
+        );
+
+        let scanner = default_scanner(ProjectFilter::Java);
+        let projects = scanner.scan_directory(base);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].kind, ProjectType::Java);
+        assert_eq!(projects[0].name.as_deref(), Some("my-kotlin-app"));
+    }
+
+    // ── C/C++ project detection tests ────────────────────────────────────
+
+    #[test]
+    fn test_detect_cpp_cmake_project() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        let project = base.join("cpp-cmake");
+        create_file(
+            &project.join("CMakeLists.txt"),
+            "project(my-cpp-lib)\ncmake_minimum_required(VERSION 3.10)",
+        );
+        create_file(&project.join("build/CMakeCache.txt"), "cache");
+
+        let scanner = default_scanner(ProjectFilter::Cpp);
+        let projects = scanner.scan_directory(base);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].kind, ProjectType::Cpp);
+        assert_eq!(projects[0].name.as_deref(), Some("my-cpp-lib"));
+    }
+
+    #[test]
+    fn test_detect_cpp_makefile_project() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        let project = base.join("cpp-make");
+        create_file(&project.join("Makefile"), "all:\n\tg++ -o main main.cpp");
+        create_file(&project.join("build/main.o"), "object");
+
+        let scanner = default_scanner(ProjectFilter::Cpp);
+        let projects = scanner.scan_directory(base);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].kind, ProjectType::Cpp);
+    }
+
+    // ── Swift project detection tests ────────────────────────────────────
+
+    #[test]
+    fn test_detect_swift_project() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        let project = base.join("swift-pkg");
+        create_file(
+            &project.join("Package.swift"),
+            "let package = Package(\n    name: \"my-swift-lib\",\n    targets: []\n)",
+        );
+        create_file(&project.join(".build/debug/my-swift-lib"), "binary");
+
+        let scanner = default_scanner(ProjectFilter::Swift);
+        let projects = scanner.scan_directory(base);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].kind, ProjectType::Swift);
+        assert_eq!(projects[0].name.as_deref(), Some("my-swift-lib"));
+    }
+
+    // ── .NET/C# project detection tests ──────────────────────────────────
+
+    #[test]
+    fn test_detect_dotnet_project() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        let project = base.join("dotnet-app");
+        create_file(
+            &project.join("MyApp.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n</Project>",
+        );
+        create_file(&project.join("bin/Debug/net8.0/MyApp.dll"), "assembly");
+        create_file(&project.join("obj/Debug/net8.0/MyApp.dll"), "intermediate");
+
+        let scanner = default_scanner(ProjectFilter::DotNet);
+        let projects = scanner.scan_directory(base);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].kind, ProjectType::DotNet);
+        assert_eq!(projects[0].name.as_deref(), Some("MyApp"));
+    }
+
+    #[test]
+    fn test_detect_dotnet_project_obj_only() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        let project = base.join("dotnet-obj-only");
+        create_file(
+            &project.join("Lib.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n</Project>",
+        );
+        create_file(&project.join("obj/Debug/net8.0/Lib.dll"), "intermediate");
+
+        let scanner = default_scanner(ProjectFilter::DotNet);
+        let projects = scanner.scan_directory(base);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].kind, ProjectType::DotNet);
+        assert_eq!(projects[0].name.as_deref(), Some("Lib"));
+    }
+
+    // ── Excluded directory tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_obj_directory_is_excluded() {
+        assert!(Scanner::is_excluded_directory(Path::new("/some/obj")));
     }
 
     // ── Cross-platform calculate_build_dir_size ─────────────────────────

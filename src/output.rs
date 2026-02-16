@@ -36,7 +36,7 @@ pub struct JsonProjectEntry {
     /// Project name extracted from config files, or `null`.
     pub name: Option<String>,
 
-    /// Project type (`"rust"`, `"node"`, `"python"`, `"go"`).
+    /// Project type (`"rust"`, `"node"`, `"python"`, `"go"`, `"java"`, `"cpp"`, `"swift"`, `"dot_net"`).
     #[serde(rename = "type")]
     pub project_type: ProjectType,
 
@@ -161,6 +161,10 @@ impl JsonSummary {
                 ProjectType::Node => "node",
                 ProjectType::Python => "python",
                 ProjectType::Go => "go",
+                ProjectType::Java => "java",
+                ProjectType::Cpp => "cpp",
+                ProjectType::Swift => "swift",
+                ProjectType::DotNet => "dotnet",
             };
 
             let entry = by_type.entry(key.to_string()).or_insert((0, 0));

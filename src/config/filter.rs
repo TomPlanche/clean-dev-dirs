@@ -12,7 +12,7 @@ use clap::ValueEnum;
 /// development projects.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ValueEnum, Default)]
 pub enum ProjectFilter {
-    /// Include all supported project types (Rust, Node.js, Python, Go)
+    /// Include all supported project types
     #[default]
     All,
 
@@ -27,6 +27,19 @@ pub enum ProjectFilter {
 
     /// Include only Go projects (go.mod + vendor/)
     Go,
+
+    /// Include only Java/Kotlin projects (pom.xml or build.gradle + target/ or build/)
+    Java,
+
+    /// Include only C/C++ projects (CMakeLists.txt or Makefile + build/)
+    Cpp,
+
+    /// Include only Swift projects (Package.swift + .build/)
+    Swift,
+
+    /// Include only .NET/C# projects (.csproj + bin/ + obj/)
+    #[value(name = "dotnet")]
+    DotNet,
 }
 
 /// Configuration for project filtering criteria.
@@ -89,11 +102,19 @@ mod tests {
         assert_eq!(ProjectFilter::Node, ProjectFilter::Node);
         assert_eq!(ProjectFilter::Python, ProjectFilter::Python);
         assert_eq!(ProjectFilter::Go, ProjectFilter::Go);
+        assert_eq!(ProjectFilter::Java, ProjectFilter::Java);
+        assert_eq!(ProjectFilter::Cpp, ProjectFilter::Cpp);
+        assert_eq!(ProjectFilter::Swift, ProjectFilter::Swift);
+        assert_eq!(ProjectFilter::DotNet, ProjectFilter::DotNet);
 
         assert_ne!(ProjectFilter::All, ProjectFilter::Rust);
         assert_ne!(ProjectFilter::Rust, ProjectFilter::Node);
         assert_ne!(ProjectFilter::Node, ProjectFilter::Python);
         assert_ne!(ProjectFilter::Python, ProjectFilter::Go);
+        assert_ne!(ProjectFilter::Go, ProjectFilter::Java);
+        assert_ne!(ProjectFilter::Java, ProjectFilter::Cpp);
+        assert_ne!(ProjectFilter::Cpp, ProjectFilter::Swift);
+        assert_ne!(ProjectFilter::Swift, ProjectFilter::DotNet);
     }
 
     #[test]

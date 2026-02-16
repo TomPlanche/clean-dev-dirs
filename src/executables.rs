@@ -49,7 +49,7 @@ pub struct PreservedExecutable {
 ///
 /// - **Rust**: copies executables from `target/release/` and `target/debug/`
 /// - **Python**: copies `.whl` files from `dist/` and `.so`/`.pyd` extensions from `build/`
-/// - **Node / Go**: no-op (their cleanable dirs are dependencies, not build outputs)
+/// - **Node / Go / Java / C++ / Swift / .NET**: no-op (their cleanable dirs are dependencies or build outputs not easily preservable)
 ///
 /// # Errors
 ///
@@ -58,7 +58,12 @@ pub fn preserve_executables(project: &Project) -> Result<Vec<PreservedExecutable
     match project.kind {
         ProjectType::Rust => preserve_rust_executables(project),
         ProjectType::Python => preserve_python_executables(project),
-        ProjectType::Node | ProjectType::Go => Ok(Vec::new()),
+        ProjectType::Node
+        | ProjectType::Go
+        | ProjectType::Java
+        | ProjectType::Cpp
+        | ProjectType::Swift
+        | ProjectType::DotNet => Ok(Vec::new()),
     }
 }
 
@@ -252,10 +257,13 @@ mod tests {
     fn create_test_project(tmp: &TempDir, kind: ProjectType) -> Project {
         let root = tmp.path().to_path_buf();
         let build_dir = match kind {
-            ProjectType::Rust => root.join("target"),
+            ProjectType::Rust | ProjectType::Java => root.join("target"),
             ProjectType::Python => root.join("__pycache__"),
             ProjectType::Node => root.join("node_modules"),
             ProjectType::Go => root.join("vendor"),
+            ProjectType::Cpp => root.join("build"),
+            ProjectType::Swift => root.join(".build"),
+            ProjectType::DotNet => root.join("obj"),
         };
 
         fs::create_dir_all(&build_dir).unwrap();
