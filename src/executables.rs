@@ -150,77 +150,97 @@ fn preserve_python_executables(project: &Project) -> Result<Vec<PreservedExecuta
     let bin_dir = root.join("bin");
     let mut preserved = Vec::new();
 
-    // Copy .whl files from dist/
-    let dist_dir = root.join("dist");
-    if dist_dir.is_dir()
-        && let Ok(entries) = fs::read_dir(&dist_dir)
-    {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("whl") {
-                fs::create_dir_all(&bin_dir)
-                    .with_context(|| format!("Failed to create {}", bin_dir.display()))?;
-
-                let file_name = path.file_name().expect("path should have a file name");
-                let dest_path = bin_dir.join(file_name);
-
-                fs::copy(&path, &dest_path).with_context(|| {
-                    format!(
-                        "Failed to copy {} to {}",
-                        path.display(),
-                        dest_path.display()
-                    )
-                })?;
-
-                preserved.push(PreservedExecutable {
-                    source: path,
-                    destination: dest_path,
-                });
-            }
-        }
-    }
-
-    // Copy .so / .pyd C extensions from build/
-    let build_dir = root.join("build");
-    if build_dir.is_dir() {
-        for entry in walkdir::WalkDir::new(&build_dir)
-            .into_iter()
-            .filter_map(std::result::Result::ok)
-        {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-
-            let is_extension = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|ext| ext == "so" || ext == "pyd");
-
-            if is_extension {
-                fs::create_dir_all(&bin_dir)
-                    .with_context(|| format!("Failed to create {}", bin_dir.display()))?;
-
-                let file_name = path.file_name().expect("path should have a file name");
-                let dest_path = bin_dir.join(file_name);
-
-                fs::copy(path, &dest_path).with_context(|| {
-                    format!(
-                        "Failed to copy {} to {}",
-                        path.display(),
-                        dest_path.display()
-                    )
-                })?;
-
-                preserved.push(PreservedExecutable {
-                    source: path.to_path_buf(),
-                    destination: dest_path,
-                });
-            }
-        }
-    }
+    collect_wheel_files(&root.join("dist"), &bin_dir, &mut preserved)?;
+    collect_native_extensions(&root.join("build"), &bin_dir, &mut preserved)?;
 
     Ok(preserved)
+}
+
+/// Copy `.whl` wheel files from the `dist/` directory into `bin_dir`.
+fn collect_wheel_files(
+    dist_dir: &Path,
+    bin_dir: &Path,
+    preserved: &mut Vec<PreservedExecutable>,
+) -> Result<()> {
+    if !dist_dir.is_dir() {
+        return Ok(());
+    }
+
+    let Ok(entries) = fs::read_dir(dist_dir) else {
+        return Ok(());
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("whl") {
+            copy_to_bin(&path, bin_dir, preserved)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Recursively copy `.so` / `.pyd` C extension files from the `build/` directory into `bin_dir`.
+fn collect_native_extensions(
+    build_dir: &Path,
+    bin_dir: &Path,
+    preserved: &mut Vec<PreservedExecutable>,
+) -> Result<()> {
+    if !build_dir.is_dir() {
+        return Ok(());
+    }
+
+    for entry in walkdir::WalkDir::new(build_dir)
+        .into_iter()
+        .filter_map(std::result::Result::ok)
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let is_native_ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|ext| ext == "so" || ext == "pyd");
+
+        if is_native_ext {
+            copy_to_bin(path, bin_dir, preserved)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Copy a single file into `bin_dir`, creating the directory if needed,
+/// and record it as a [`PreservedExecutable`].
+fn copy_to_bin(
+    source: &Path,
+    bin_dir: &Path,
+    preserved: &mut Vec<PreservedExecutable>,
+) -> Result<()> {
+    fs::create_dir_all(bin_dir)
+        .with_context(|| format!("Failed to create {}", bin_dir.display()))?;
+
+    let file_name = source
+        .file_name()
+        .expect("source path should have a file name");
+    let dest_path = bin_dir.join(file_name);
+
+    fs::copy(source, &dest_path).with_context(|| {
+        format!(
+            "Failed to copy {} to {}",
+            source.display(),
+            dest_path.display()
+        )
+    })?;
+
+    preserved.push(PreservedExecutable {
+        source: source.to_path_buf(),
+        destination: dest_path,
+    });
+
+    Ok(())
 }
 
 #[cfg(test)]
