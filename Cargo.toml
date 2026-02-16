@@ -16,7 +16,7 @@ license = "Apache-2.0 OR MIT"
 name = "clean-dev-dirs"
 readme = "README.md"
 repository = "https://github.com/TomPlanche/clean-dev-dirs"
-version = "2.4.0"
+version = "2.4.1"
 
 [lib]
 name = "clean_dev_dirs"
