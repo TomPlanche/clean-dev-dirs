@@ -34,6 +34,9 @@ pub struct Scanner {
 
     /// Filter to restrict scanning to specific project types
     project_filter: ProjectFilter,
+
+    /// When `true`, suppresses progress spinner output (used by `--json` mode).
+    quiet: bool,
 }
 
 impl Scanner {
@@ -61,11 +64,22 @@ impl Scanner {
     /// let scanner = Scanner::new(scan_options, ProjectFilter::All);
     /// ```
     #[must_use]
-    pub fn new(scan_options: ScanOptions, project_filter: ProjectFilter) -> Self {
+    pub const fn new(scan_options: ScanOptions, project_filter: ProjectFilter) -> Self {
         Self {
             scan_options,
             project_filter,
+            quiet: false,
         }
+    }
+
+    /// Enable or disable quiet mode (suppresses progress spinner).
+    ///
+    /// When quiet mode is active the scanning spinner is hidden, which is
+    /// required for `--json` output so that only the final JSON is printed.
+    #[must_use]
+    pub const fn with_quiet(mut self, quiet: bool) -> Self {
+        self.quiet = quiet;
+        self
     }
 
     /// Scan a directory tree for development projects.
@@ -107,14 +121,18 @@ impl Scanner {
     pub fn scan_directory(&self, root: &Path) -> Vec<Project> {
         let errors = Arc::new(Mutex::new(Vec::<String>::new()));
 
-        // Create a progress bar
-        let progress = ProgressBar::new_spinner();
-        progress.set_style(
-            ProgressStyle::default_spinner()
-                .template("{spinner:.green} {msg}")
-                .unwrap(),
-        );
-        progress.set_message("Scanning directories...");
+        let progress = if self.quiet {
+            ProgressBar::hidden()
+        } else {
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.green} {msg}")
+                    .unwrap(),
+            );
+            pb.set_message("Scanning directories...");
+            pb
+        };
 
         // Find all potential project directories
         let potential_projects: Vec<_> = WalkDir::new(root)
@@ -447,16 +465,20 @@ impl Scanner {
                     .map(std::string::ToString::to_string),
                 Err(e) => {
                     if self.scan_options.verbose {
-                        let mut errors = errors.lock().unwrap();
-                        errors.push(format!("Error parsing {}: {e}", package_json.display()));
+                        errors
+                            .lock()
+                            .unwrap()
+                            .push(format!("Error parsing {}: {e}", package_json.display()));
                     }
                     None
                 }
             },
             Err(e) => {
                 if self.scan_options.verbose {
-                    let mut errors = errors.lock().unwrap();
-                    errors.push(format!("Error reading {}: {e}", package_json.display()));
+                    errors
+                        .lock()
+                        .unwrap()
+                        .push(format!("Error reading {}: {e}", package_json.display()));
                 }
                 None
             }
@@ -476,8 +498,10 @@ impl Scanner {
         errors: &Arc<Mutex<Vec<String>>>,
     ) {
         if self.scan_options.verbose {
-            let mut errors = errors.lock().unwrap();
-            errors.push(format!("Error reading {}: {error}", file_path.display()));
+            errors
+                .lock()
+                .unwrap()
+                .push(format!("Error reading {}: {error}", file_path.display()));
         }
     }
 

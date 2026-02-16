@@ -9,7 +9,7 @@ use clap::ValueEnum;
 ///
 /// This enum is used to restrict scanning and cleaning to specific types of
 /// development projects.
-#[derive(Clone, Copy, PartialEq, Debug, ValueEnum, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ValueEnum, Default)]
 pub enum ProjectFilter {
     /// Include all supported project types (Rust, Node.js, Python, Go)
     #[default]

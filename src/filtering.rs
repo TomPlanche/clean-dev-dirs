@@ -64,7 +64,7 @@ pub fn filter_projects(
 }
 
 /// Check if a project meets the size criteria.
-fn meets_size_criteria(project: &Project, min_size: u64) -> bool {
+const fn meets_size_criteria(project: &Project, min_size: u64) -> bool {
     project.build_arts.size >= min_size
 }
 

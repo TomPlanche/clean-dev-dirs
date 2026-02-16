@@ -41,6 +41,7 @@ clean-dev-dirs --interactive
 - **Dry-run mode**: Preview what would be cleaned without actually deleting anything
 - **Progress indicators**: Real-time feedback during scanning and cleaning operations
 - **Executable preservation**: Keep compiled binaries before cleaning with `--keep-executables`
+- **JSON output**: Structured `--json` output for scripting, piping, and dashboard integration
 - **Detailed statistics**: See total space that can be reclaimed before cleaning
 - **Persistent configuration**: Set defaults in `~/.config/clean-dev-dirs/config.toml` so you don't repeat flags
 - **Flexible configuration**: Combine multiple filters and options for precise control
@@ -149,6 +150,84 @@ When enabled, compiled outputs are copied to `<project>/bin/` before the build d
 - **Python**: `.whl` files from `dist/` and `.so`/`.pyd` C extensions from `build/` are copied to `bin/`
 - **Node.js / Go**: no-op (their cleaned directories contain dependencies, not build outputs)
 
+### JSON Output
+
+Use `--json` to get structured output for scripting, piping to `jq`, or feeding into dashboards:
+
+```bash
+# List all projects as JSON (dry run)
+clean-dev-dirs --json --dry-run
+
+# Clean and get machine-readable results
+clean-dev-dirs --json --yes ~/Projects
+
+# Pipe to jq for further processing
+clean-dev-dirs --json --dry-run | jq '.projects[] | select(.build_artifacts_size > 1000000000)'
+
+# Get total reclaimable space across Rust projects
+clean-dev-dirs --json --dry-run -p rust | jq '.summary.total_size_formatted'
+```
+
+When `--json` is active, all human-readable output (colors, progress bars, emojis) is suppressed and a single JSON document is printed to stdout. `--json` is incompatible with `--interactive` and implies `--yes` behavior (no confirmation prompts).
+
+<details>
+<summary>Example JSON output (dry run)</summary>
+
+```json
+{
+  "mode": "dry_run",
+  "projects": [
+    {
+      "name": "my-rust-app",
+      "type": "rust",
+      "root_path": "/home/user/projects/rust-app",
+      "build_artifacts_path": "/home/user/projects/rust-app/target",
+      "build_artifacts_size": 2300000000,
+      "build_artifacts_size_formatted": "2.30 GB"
+    },
+    {
+      "name": "web-frontend",
+      "type": "node",
+      "root_path": "/home/user/projects/web-app",
+      "build_artifacts_path": "/home/user/projects/web-app/node_modules",
+      "build_artifacts_size": 856000000,
+      "build_artifacts_size_formatted": "856.00 MB"
+    }
+  ],
+  "summary": {
+    "total_projects": 2,
+    "total_size": 3156000000,
+    "total_size_formatted": "3.16 GB",
+    "by_type": {
+      "node": { "count": 1, "size": 856000000, "size_formatted": "856.00 MB" },
+      "rust": { "count": 1, "size": 2300000000, "size_formatted": "2.30 GB" }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>Example JSON output (after cleanup)</summary>
+
+```json
+{
+  "mode": "cleanup",
+  "projects": [ "..." ],
+  "summary": { "..." },
+  "cleanup": {
+    "success_count": 2,
+    "failure_count": 0,
+    "total_freed": 3156000000,
+    "total_freed_formatted": "3.16 GB",
+    "errors": []
+  }
+}
+```
+
+</details>
+
 ### Advanced Options
 
 ```bash
@@ -252,7 +331,12 @@ clean-dev-dirs /large/directory --threads 16 --verbose
 clean-dev-dirs ~/Projects -p rust -k
 ```
 
-**7. Set up a config file for your usual workflow:**
+**7. Get a JSON report for a CI/CD dashboard:**
+```bash
+clean-dev-dirs ~/Projects --json --dry-run | jq '.summary'
+```
+
+**8. Set up a config file for your usual workflow:**
 ```bash
 mkdir -p ~/.config/clean-dev-dirs
 cat > ~/.config/clean-dev-dirs/config.toml << 'EOF'
@@ -290,6 +374,12 @@ clean-dev-dirs
 |--------|-------|-------------|
 | `--keep-size` | `-s` | Ignore projects with build dir smaller than specified size |
 | `--keep-days` | `-d` | Ignore projects modified in the last N days |
+
+### Output Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output results as a single JSON object for scripting/piping (incompatible with `--interactive`) |
 
 ### Execution Options
 
@@ -531,7 +621,7 @@ Built with excellent open-source libraries:
 - [Inquire](https://crates.io/crates/inquire) - Interactive prompts and selection
 - [WalkDir](https://crates.io/crates/walkdir) - Recursive directory iteration
 - [Humansize](https://crates.io/crates/humansize) - Human-readable file sizes
-- [Serde](https://crates.io/crates/serde) + [TOML](https://crates.io/crates/toml) - Configuration file parsing
+- [Serde](https://crates.io/crates/serde) + [serde_json](https://crates.io/crates/serde_json) + [TOML](https://crates.io/crates/toml) - Serialization, JSON output, and configuration file parsing
 - [dirs](https://crates.io/crates/dirs) - Cross-platform config directory resolution
 
 ## Support

@@ -137,6 +137,14 @@ pub struct Cli {
     #[arg(short = 'p', long)]
     project_type: Option<ProjectFilter>,
 
+    /// Output results as a single JSON object for scripting/piping
+    ///
+    /// When enabled, all human-readable output (colors, progress bars, emojis)
+    /// is suppressed and a single JSON document is printed to stdout.
+    /// Incompatible with `--interactive`.
+    #[arg(long)]
+    json: bool,
+
     /// Execution options
     #[command(flatten)]
     execution: ExecutionArgs,
@@ -151,6 +159,12 @@ pub struct Cli {
 }
 
 impl Cli {
+    /// Whether `--json` structured output mode is enabled.
+    #[must_use]
+    pub const fn json(&self) -> bool {
+        self.json
+    }
+
     /// Resolve the target directory from CLI args, config file, or default.
     ///
     /// Priority: CLI argument > config file > current directory (`.`).
