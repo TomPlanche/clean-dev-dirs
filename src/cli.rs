@@ -90,6 +90,14 @@ struct ExecutionArgs {
     /// in the project root before deleting build directories.
     #[arg(short = 'k', long)]
     keep_executables: bool,
+
+    /// Permanently delete directories instead of moving them to the system trash
+    ///
+    /// By default, build directories are moved to the system trash (Recycle Bin
+    /// on Windows, Trash on macOS/Linux) so deletions are recoverable. When this
+    /// flag is set, directories are permanently removed (`rm -rf` style) instead.
+    #[arg(long)]
+    permanent: bool,
 }
 
 /// Command-line arguments for controlling directory scanning behavior.
@@ -262,6 +270,7 @@ impl Cli {
                 || config.execution.interactive.unwrap_or(false),
             keep_executables: self.execution.keep_executables
                 || config.execution.keep_executables.unwrap_or(false),
+            use_trash: !self.execution.permanent && config.execution.use_trash.unwrap_or(true),
         }
     }
 
@@ -385,6 +394,7 @@ mod tests {
         assert!(!exec_opts.dry_run);
         assert!(!exec_opts.interactive);
         assert!(!exec_opts.keep_executables);
+        assert!(exec_opts.use_trash);
 
         let scan_opts = args.scan_options(&config);
         assert!(!scan_opts.verbose);
@@ -432,6 +442,7 @@ mod tests {
         assert!(exec_opts.dry_run);
         assert!(exec_opts.interactive);
         assert!(!exec_opts.keep_executables);
+        assert!(exec_opts.use_trash);
     }
 
     #[test]
@@ -445,6 +456,52 @@ mod tests {
         let args_short = Cli::parse_from(["clean-dev-dirs", "-k"]);
         let exec_opts_short = args_short.execution_options(&config);
         assert!(exec_opts_short.keep_executables);
+    }
+
+    #[test]
+    fn test_trash_is_default() {
+        let config = FileConfig::default();
+        let args = Cli::parse_from(["clean-dev-dirs"]);
+        let exec_opts = args.execution_options(&config);
+        assert!(exec_opts.use_trash);
+    }
+
+    #[test]
+    fn test_permanent_flag_disables_trash() {
+        let config = FileConfig::default();
+        let args = Cli::parse_from(["clean-dev-dirs", "--permanent"]);
+        let exec_opts = args.execution_options(&config);
+        assert!(!exec_opts.use_trash);
+    }
+
+    #[test]
+    fn test_config_use_trash_false_disables_trash() {
+        let args = Cli::parse_from(["clean-dev-dirs"]);
+        let config = FileConfig {
+            execution: FileExecutionConfig {
+                use_trash: Some(false),
+                ..FileExecutionConfig::default()
+            },
+            ..FileConfig::default()
+        };
+
+        let exec_opts = args.execution_options(&config);
+        assert!(!exec_opts.use_trash);
+    }
+
+    #[test]
+    fn test_permanent_flag_overrides_config_use_trash_true() {
+        let args = Cli::parse_from(["clean-dev-dirs", "--permanent"]);
+        let config = FileConfig {
+            execution: FileExecutionConfig {
+                use_trash: Some(true),
+                ..FileExecutionConfig::default()
+            },
+            ..FileConfig::default()
+        };
+
+        let exec_opts = args.execution_options(&config);
+        assert!(!exec_opts.use_trash);
     }
 
     #[test]
@@ -611,6 +668,7 @@ mod tests {
                 keep_executables: Some(true),
                 interactive: Some(true),
                 dry_run: Some(true),
+                use_trash: Some(true),
             },
         };
 
@@ -630,6 +688,7 @@ mod tests {
         assert!(exec_opts.keep_executables);
         assert!(exec_opts.interactive);
         assert!(exec_opts.dry_run);
+        assert!(exec_opts.use_trash);
     }
 
     #[test]
@@ -698,6 +757,7 @@ mod tests {
                 dry_run: Some(false),
                 interactive: Some(true),
                 keep_executables: Some(false),
+                use_trash: Some(true),
             },
             ..FileConfig::default()
         };
@@ -706,6 +766,7 @@ mod tests {
         assert!(exec_opts.dry_run);
         assert!(exec_opts.interactive);
         assert!(!exec_opts.keep_executables);
+        assert!(exec_opts.use_trash);
     }
 
     #[test]
