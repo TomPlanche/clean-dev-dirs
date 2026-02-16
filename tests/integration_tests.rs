@@ -610,10 +610,7 @@ fn test_scanner_hidden_directory_itself_not_detected_unix() {
         "[package]\nname = \"hidden\"\nversion = \"0.1.0\"",
     );
     create_dir(&hidden_project.join("target"));
-    create_file(
-        &hidden_project.join("target/dummy"),
-        "content",
-    );
+    create_file(&hidden_project.join("target/dummy"), "content");
 
     let scan_options = ScanOptions {
         verbose: false,
@@ -687,10 +684,12 @@ fn test_executable_preservation_integration_unix() {
     let preserved = clean_dev_dirs::executables::preserve_executables(&projects[0]).unwrap();
     assert_eq!(preserved.len(), 1);
     assert!(preserved[0].destination.exists());
-    assert!(preserved[0]
-        .destination
-        .to_string_lossy()
-        .contains("bin/release/my-tool"));
+    assert!(
+        preserved[0]
+            .destination
+            .to_string_lossy()
+            .contains("bin/release/my-tool")
+    );
 }
 
 #[test]
@@ -750,10 +749,12 @@ fn test_executable_preservation_integration_windows() {
     let preserved = clean_dev_dirs::executables::preserve_executables(&projects[0]).unwrap();
     assert_eq!(preserved.len(), 1);
     assert!(preserved[0].destination.exists());
-    assert!(preserved[0]
-        .destination
-        .to_string_lossy()
-        .contains("my-tool.exe"));
+    assert!(
+        preserved[0]
+            .destination
+            .to_string_lossy()
+            .contains("my-tool.exe")
+    );
 }
 
 #[test]
@@ -814,10 +815,7 @@ fn test_python_whl_preservation_cross_platform() {
     let preserved = clean_dev_dirs::executables::preserve_executables(&projects[0]).unwrap();
     // Should find the .whl file on any platform
     assert_eq!(preserved.len(), 1);
-    assert!(preserved[0]
-        .destination
-        .to_string_lossy()
-        .ends_with(".whl"));
+    assert!(preserved[0].destination.to_string_lossy().ends_with(".whl"));
 }
 
 #[test]
@@ -847,10 +845,7 @@ fn test_python_so_preservation_unix() {
 
     let preserved = clean_dev_dirs::executables::preserve_executables(&projects[0]).unwrap();
     assert_eq!(preserved.len(), 1);
-    assert!(preserved[0]
-        .destination
-        .to_string_lossy()
-        .ends_with(".so"));
+    assert!(preserved[0].destination.to_string_lossy().ends_with(".so"));
 }
 
 #[test]
@@ -880,10 +875,7 @@ fn test_python_pyd_preservation_windows() {
 
     let preserved = clean_dev_dirs::executables::preserve_executables(&projects[0]).unwrap();
     assert_eq!(preserved.len(), 1);
-    assert!(preserved[0]
-        .destination
-        .to_string_lossy()
-        .ends_with(".pyd"));
+    assert!(preserved[0].destination.to_string_lossy().ends_with(".pyd"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -898,11 +890,7 @@ fn test_config_path_ends_with_expected_suffix() {
         // On all platforms, the config file should be named config.toml
         // inside a clean-dev-dirs directory
         assert!(
-            path.file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                == "config.toml",
+            path.file_name().unwrap().to_str().unwrap() == "config.toml",
             "Config file should be named config.toml"
         );
         assert!(

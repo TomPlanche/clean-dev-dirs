@@ -397,9 +397,11 @@ mod tests {
 
         for preserved in &result {
             assert!(preserved.destination.exists());
-            assert!(preserved
-                .destination
-                .starts_with(tmp.path().join("bin/release")));
+            assert!(
+                preserved
+                    .destination
+                    .starts_with(tmp.path().join("bin/release"))
+            );
         }
     }
 
@@ -439,13 +441,15 @@ mod tests {
 
         let result = preserve_executables(&project).unwrap();
         assert_eq!(result.len(), 1);
-        assert!(result[0]
-            .destination
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains("real-binary"));
+        assert!(
+            result[0]
+                .destination
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("real-binary")
+        );
     }
 
     #[test]
@@ -525,8 +529,11 @@ mod tests {
         let build_dir = tmp.path().join("build/lib.linux-x86_64-3.9");
         fs::create_dir_all(&build_dir).unwrap();
 
-        fs::write(build_dir.join("mymodule.cpython-39-x86_64-linux-gnu.so"), b"shared object")
-            .unwrap();
+        fs::write(
+            build_dir.join("mymodule.cpython-39-x86_64-linux-gnu.so"),
+            b"shared object",
+        )
+        .unwrap();
         fs::write(build_dir.join("another.so"), b"shared object").unwrap();
 
         let result = preserve_python_executables(&project).unwrap();
@@ -622,13 +629,15 @@ mod tests {
 
         let result = preserve_executables(&project).unwrap();
         assert_eq!(result.len(), 1);
-        assert!(result[0]
-            .destination
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains("my-binary.exe"));
+        assert!(
+            result[0]
+                .destination
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("my-binary.exe")
+        );
     }
 
     #[test]
@@ -658,7 +667,11 @@ mod tests {
         let build_dir = tmp.path().join("build/lib.win-amd64-3.9");
         fs::create_dir_all(&build_dir).unwrap();
 
-        fs::write(build_dir.join("mymodule.cp39-win_amd64.pyd"), b"python extension").unwrap();
+        fs::write(
+            build_dir.join("mymodule.cp39-win_amd64.pyd"),
+            b"python extension",
+        )
+        .unwrap();
         fs::write(build_dir.join("another.pyd"), b"python extension").unwrap();
 
         let result = preserve_python_executables(&project).unwrap();
@@ -685,19 +698,17 @@ mod tests {
             b"wheel content",
         )
         .unwrap();
-        fs::write(
-            dist_dir.join("mypackage-1.0.0.tar.gz"),
-            b"tarball content",
-        )
-        .unwrap();
+        fs::write(dist_dir.join("mypackage-1.0.0.tar.gz"), b"tarball content").unwrap();
 
         let result = preserve_python_executables(&project).unwrap();
         // Only .whl should be preserved, not .tar.gz
         assert_eq!(result.len(), 1);
-        assert!(result[0]
-            .destination
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("whl")));
+        assert!(
+            result[0]
+                .destination
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("whl"))
+        );
     }
 
     #[test]
@@ -731,11 +742,7 @@ mod tests {
         // Create dist/ with .whl files
         let dist_dir = tmp.path().join("dist");
         fs::create_dir_all(&dist_dir).unwrap();
-        fs::write(
-            dist_dir.join("mypackage-1.0.0-py3-none-any.whl"),
-            b"wheel",
-        )
-        .unwrap();
+        fs::write(dist_dir.join("mypackage-1.0.0-py3-none-any.whl"), b"wheel").unwrap();
 
         // Create build/ with extensions (.so on Unix, .pyd on Windows)
         let build_dir = tmp.path().join("build/lib");

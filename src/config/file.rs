@@ -367,8 +367,10 @@ keep_days = "not_a_number"
             );
 
             // Common: always ends with our application config file name
-            assert!(p.ends_with("clean-dev-dirs/config.toml")
-                || p.ends_with(Path::new("clean-dev-dirs").join("config.toml")));
+            assert!(
+                p.ends_with("clean-dev-dirs/config.toml")
+                    || p.ends_with(Path::new("clean-dev-dirs").join("config.toml"))
+            );
         }
     }
 
@@ -422,10 +424,7 @@ keep_days = "not_a_number"
         // Test that TOML parsing handles paths from any platform
         let toml_unix = "dir = \"/home/user/projects\"\n";
         let config: FileConfig = toml::from_str(toml_unix).unwrap();
-        assert_eq!(
-            config.dir,
-            Some(PathBuf::from("/home/user/projects"))
-        );
+        assert_eq!(config.dir, Some(PathBuf::from("/home/user/projects")));
 
         let toml_tilde = "dir = \"~/Projects\"\n";
         let config: FileConfig = toml::from_str(toml_tilde).unwrap();

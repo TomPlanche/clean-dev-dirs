@@ -987,9 +987,15 @@ mod tests {
     #[test]
     fn test_is_hidden_directory_to_skip() {
         // Hidden directories should be skipped
-        assert!(Scanner::is_hidden_directory_to_skip(Path::new("/some/.hidden")));
-        assert!(Scanner::is_hidden_directory_to_skip(Path::new("/some/.git")));
-        assert!(Scanner::is_hidden_directory_to_skip(Path::new("/some/.svn")));
+        assert!(Scanner::is_hidden_directory_to_skip(Path::new(
+            "/some/.hidden"
+        )));
+        assert!(Scanner::is_hidden_directory_to_skip(Path::new(
+            "/some/.git"
+        )));
+        assert!(Scanner::is_hidden_directory_to_skip(Path::new(
+            "/some/.svn"
+        )));
         assert!(Scanner::is_hidden_directory_to_skip(Path::new(".env")));
 
         // .cargo is the special exception — should NOT be skipped
@@ -1031,9 +1037,7 @@ mod tests {
         )));
         assert!(Scanner::is_excluded_directory(Path::new("/some/.tox")));
         assert!(Scanner::is_excluded_directory(Path::new("/some/.eggs")));
-        assert!(Scanner::is_excluded_directory(Path::new(
-            "/some/.coverage"
-        )));
+        assert!(Scanner::is_excluded_directory(Path::new("/some/.coverage")));
 
         // Virtual environments
         assert!(Scanner::is_excluded_directory(Path::new("/some/venv")));
@@ -1339,7 +1343,10 @@ mod tests {
         let base = tmp.path();
 
         let project = base.join("pipenv-project");
-        create_file(&project.join("Pipfile"), "[[source]]\nurl = \"https://pypi.org/simple\"");
+        create_file(
+            &project.join("Pipfile"),
+            "[[source]]\nurl = \"https://pypi.org/simple\"",
+        );
         let pycache = project.join("__pycache__");
         fs::create_dir_all(&pycache).unwrap();
         create_file(&pycache.join("module.pyc"), "bytecode");
