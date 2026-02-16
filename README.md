@@ -42,6 +42,7 @@ clean-dev-dirs --interactive
 - **Progress indicators**: Real-time feedback during scanning and cleaning operations
 - **Executable preservation**: Keep compiled binaries before cleaning with `--keep-executables`
 - **Detailed statistics**: See total space that can be reclaimed before cleaning
+- **Persistent configuration**: Set defaults in `~/.config/clean-dev-dirs/config.toml` so you don't repeat flags
 - **Flexible configuration**: Combine multiple filters and options for precise control
 
 ## Inspiration
@@ -167,6 +168,58 @@ clean-dev-dirs --yes
 clean-dev-dirs ~/Projects -p rust --keep-size 100MB --keep-days 30 --dry-run
 ```
 
+### Configuration File
+
+You can store default settings in a TOML file so you don't have to repeat the same flags every time. CLI arguments always override config file values.
+
+**Location:** `~/.config/clean-dev-dirs/config.toml` (Linux/macOS) or `%APPDATA%\clean-dev-dirs\config.toml` (Windows)
+
+```toml
+# Default project type filter
+project_type = "rust"
+
+# Default directory to scan (~ is expanded)
+dir = "~/Projects"
+
+[filtering]
+keep_size = "50MB"
+keep_days = 7
+
+[scanning]
+threads = 4
+verbose = true
+skip = [".cargo", "vendor"]
+ignore = [".git"]
+
+[execution]
+keep_executables = true
+interactive = false
+dry_run = false
+```
+
+All fields are optional — only set what you need. An absent config file is silently ignored; a malformed one produces an error message.
+
+**Layering rules:**
+
+| Value type | Behavior |
+|------------|----------|
+| Scalar (`keep_size`, `threads`, `project_type`, `dir`, …) | CLI wins if provided, otherwise config file, otherwise built-in default |
+| Boolean flag (`--dry-run`, `--verbose`, …) | `true` if the CLI flag is present **or** the config file sets it to `true` |
+| List (`skip`, `ignore`) | **Merged** — config file entries first, then CLI entries appended |
+
+**Examples:**
+
+```bash
+# Uses keep_size = "50MB" from config, overrides project_type on CLI
+clean-dev-dirs -p node
+
+# CLI --keep-size wins over the config file value
+clean-dev-dirs --keep-size 200MB
+
+# skip dirs from config (.cargo, vendor) + CLI (node_modules) are all active
+clean-dev-dirs --skip node_modules
+```
+
 ### Common Use Cases
 
 **1. Clean old Rust projects:**
@@ -197,6 +250,24 @@ clean-dev-dirs /large/directory --threads 16 --verbose
 **6. Clean Rust projects but keep the compiled binaries:**
 ```bash
 clean-dev-dirs ~/Projects -p rust -k
+```
+
+**7. Set up a config file for your usual workflow:**
+```bash
+mkdir -p ~/.config/clean-dev-dirs
+cat > ~/.config/clean-dev-dirs/config.toml << 'EOF'
+dir = "~/Projects"
+
+[filtering]
+keep_size = "50MB"
+keep_days = 7
+
+[scanning]
+skip = [".cargo"]
+EOF
+
+# Now just run without flags — defaults come from the config
+clean-dev-dirs
 ```
 
 ## Command Reference
@@ -460,6 +531,8 @@ Built with excellent open-source libraries:
 - [Inquire](https://crates.io/crates/inquire) - Interactive prompts and selection
 - [WalkDir](https://crates.io/crates/walkdir) - Recursive directory iteration
 - [Humansize](https://crates.io/crates/humansize) - Human-readable file sizes
+- [Serde](https://crates.io/crates/serde) + [TOML](https://crates.io/crates/toml) - Configuration file parsing
+- [dirs](https://crates.io/crates/dirs) - Cross-platform config directory resolution
 
 ## Support
 

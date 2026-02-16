@@ -15,6 +15,7 @@
 //! - Interactive project selection
 //! - Dry-run mode for safe previewing
 //! - Human-readable output with progress indicators
+//! - Persistent configuration via `~/.config/clean-dev-dirs/config.toml`
 //!
 //! ## Usage
 //!
@@ -34,7 +35,8 @@ mod cli;
 use anyhow::{Ok, Result};
 use clap::Parser;
 use clean_dev_dirs::{
-    cleaner::Cleaner, filtering::filter_projects, project::Projects, scanner::Scanner,
+    cleaner::Cleaner, config::FileConfig, filtering::filter_projects, project::Projects,
+    scanner::Scanner,
 };
 use cli::Cli;
 use colored::Colorize;
@@ -58,10 +60,11 @@ fn main() {
 ///
 /// This function:
 /// 1. Parses command-line arguments
-/// 2. Configures the thread pool for parallel processing
-/// 3. Scans the specified directory for development projects
-/// 4. Filters projects based on user criteria
-/// 5. Either performs a dry run, interactive selection, or automatic cleaning
+/// 2. Loads the persistent configuration file (if present)
+/// 3. Configures the thread pool for parallel processing
+/// 4. Scans the specified directory for development projects
+/// 5. Filters projects based on user criteria
+/// 6. Either performs a dry run, interactive selection, or automatic cleaning
 ///
 /// # Returns
 ///
@@ -79,12 +82,20 @@ fn main() {
 fn inner_main() -> Result<()> {
     let args = Cli::parse();
 
-    let dir = &args.dir;
+    let file_config = match FileConfig::load() {
+        std::result::Result::Ok(config) => config,
+        Err(e) => {
+            eprintln!("{} {e}", "Warning: Failed to load config file:".yellow());
+            FileConfig::default()
+        }
+    };
 
-    let project_filter = args.project_filter();
-    let execution_options = args.execution_options();
-    let scan_options = args.scan_options();
-    let filter_options = args.filter_options();
+    let dir = args.directory(&file_config);
+
+    let project_filter = args.project_filter(&file_config);
+    let execution_options = args.execution_options(&file_config);
+    let scan_options = args.scan_options(&file_config);
+    let filter_options = args.filter_options(&file_config);
 
     if scan_options.threads > 0 {
         rayon::ThreadPoolBuilder::new()
@@ -94,7 +105,7 @@ fn inner_main() -> Result<()> {
 
     let scanner = Scanner::new(scan_options, project_filter);
 
-    let projects = scanner.scan_directory(dir);
+    let projects = scanner.scan_directory(&dir);
 
     println!("Found {} projects", projects.len());
 
