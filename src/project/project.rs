@@ -8,12 +8,15 @@ use std::{
     path::PathBuf,
 };
 
+use serde::Serialize;
+
 /// Enumeration of supported development project types.
 ///
 /// This enum distinguishes between different types of development projects
 /// that the tool can detect and clean. Each project type has its own
 /// characteristic files and build directories.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ProjectType {
     /// Rust project with Cargo.toml and target/ directory
     ///
@@ -38,13 +41,38 @@ pub enum ProjectType {
     /// Go projects are identified by the presence of both a `go.mod`
     /// file and a `vendor/` directory in the same location.
     Go,
+
+    /// Java/Kotlin project with pom.xml or build.gradle and target/ or build/ directory
+    ///
+    /// Java/Kotlin projects are identified by the presence of Maven (`pom.xml`)
+    /// or Gradle (`build.gradle`, `build.gradle.kts`) configuration files along
+    /// with their respective build output directories.
+    Java,
+
+    /// C/C++ project with CMakeLists.txt or Makefile and build/ directory
+    ///
+    /// C/C++ projects are identified by the presence of build system files
+    /// (`CMakeLists.txt` or `Makefile`) alongside a `build/` directory.
+    Cpp,
+
+    /// Swift project with Package.swift and .build/ directory
+    ///
+    /// Swift Package Manager projects are identified by the presence of a
+    /// `Package.swift` manifest and the `.build/` directory.
+    Swift,
+
+    /// .NET/C# project with .csproj and bin/ + obj/ directories
+    ///
+    /// .NET projects are identified by the presence of `.csproj` project files
+    /// alongside `bin/` and/or `obj/` output directories.
+    DotNet,
 }
 
 /// Information about build artifacts that can be cleaned.
 ///
 /// This struct contains metadata about the build directory or artifacts
 /// that are candidates for cleanup, including their location and total size.
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct BuildArtifacts {
     /// Path to the build directory (target/ or `node_modules`/)
     ///
@@ -65,7 +93,7 @@ pub struct BuildArtifacts {
 /// This struct encapsulates all information about a development project,
 /// including its type, location, build artifacts, and metadata extracted
 /// from project configuration files.
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct Project {
     /// Type of the project (Rust or Node.js)
     pub kind: ProjectType,
@@ -126,7 +154,7 @@ impl Project {
     /// );
     /// ```
     #[must_use]
-    pub fn new(
+    pub const fn new(
         kind: ProjectType,
         root_path: PathBuf,
         build_arts: BuildArtifacts,
@@ -156,6 +184,10 @@ impl Display for Project {
     /// - `📦 my-node-app (/path/to/app)`
     /// - `🐍 my-python-project (/path/to/project)`
     /// - `🐹 my-go-project (/path/to/project)`
+    /// - `☕ my-java-project (/path/to/project)`
+    /// - `⚙️ my-cpp-project (/path/to/project)`
+    /// - `🐦 my-swift-project (/path/to/project)`
+    /// - `🔷 my-dotnet-project (/path/to/project)`
     /// - `🦀 /path/to/unnamed/project` (when no name is available)
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let icon = match self.kind {
@@ -163,6 +195,10 @@ impl Display for Project {
             ProjectType::Node => "📦",
             ProjectType::Python => "🐍",
             ProjectType::Go => "🐹",
+            ProjectType::Java => "☕",
+            ProjectType::Cpp => "⚙️",
+            ProjectType::Swift => "🐦",
+            ProjectType::DotNet => "🔷",
         };
 
         if let Some(name) = &self.name {
@@ -208,10 +244,18 @@ mod tests {
         assert_eq!(ProjectType::Node, ProjectType::Node);
         assert_eq!(ProjectType::Python, ProjectType::Python);
         assert_eq!(ProjectType::Go, ProjectType::Go);
+        assert_eq!(ProjectType::Java, ProjectType::Java);
+        assert_eq!(ProjectType::Cpp, ProjectType::Cpp);
+        assert_eq!(ProjectType::Swift, ProjectType::Swift);
+        assert_eq!(ProjectType::DotNet, ProjectType::DotNet);
 
         assert_ne!(ProjectType::Rust, ProjectType::Node);
         assert_ne!(ProjectType::Node, ProjectType::Python);
         assert_ne!(ProjectType::Python, ProjectType::Go);
+        assert_ne!(ProjectType::Go, ProjectType::Java);
+        assert_ne!(ProjectType::Java, ProjectType::Cpp);
+        assert_ne!(ProjectType::Cpp, ProjectType::Swift);
+        assert_ne!(ProjectType::Swift, ProjectType::DotNet);
     }
 
     #[test]
@@ -287,6 +331,50 @@ mod tests {
 
         let expected = "🐹 my-go-app (/path/to/go-project)";
         assert_eq!(format!("{go_project}"), expected);
+
+        let java_project = create_test_project(
+            ProjectType::Java,
+            "/path/to/java-project",
+            "/path/to/java-project/target",
+            8192,
+            Some("my-java-app".to_string()),
+        );
+
+        let expected = "☕ my-java-app (/path/to/java-project)";
+        assert_eq!(format!("{java_project}"), expected);
+
+        let cpp_project = create_test_project(
+            ProjectType::Cpp,
+            "/path/to/cpp-project",
+            "/path/to/cpp-project/build",
+            2048,
+            Some("my-cpp-app".to_string()),
+        );
+
+        let expected = "⚙\u{fe0f} my-cpp-app (/path/to/cpp-project)";
+        assert_eq!(format!("{cpp_project}"), expected);
+
+        let swift_project = create_test_project(
+            ProjectType::Swift,
+            "/path/to/swift-project",
+            "/path/to/swift-project/.build",
+            1024,
+            Some("my-swift-app".to_string()),
+        );
+
+        let expected = "🐦 my-swift-app (/path/to/swift-project)";
+        assert_eq!(format!("{swift_project}"), expected);
+
+        let dotnet_project = create_test_project(
+            ProjectType::DotNet,
+            "/path/to/dotnet-project",
+            "/path/to/dotnet-project/obj",
+            4096,
+            Some("my-dotnet-app".to_string()),
+        );
+
+        let expected = "🔷 my-dotnet-app (/path/to/dotnet-project)";
+        assert_eq!(format!("{dotnet_project}"), expected);
     }
 
     #[test]
