@@ -1,0 +1,213 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  extract-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building release for ${VERSION}"
+
+  build-linux:
+    needs: extract-version
+    name: Build Linux Binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Create archive
+        run: |
+          VERSION=${{ needs.extract-version.outputs.version }}
+          VERSION=${VERSION#v}  # Remove 'v' prefix
+          mkdir -p release
+          cp target/release/clean-dev-dirs release/
+          cd release
+          tar -czvf clean-dev-dirs-${VERSION}-linux-x86_64.tar.gz clean-dev-dirs
+          cd ..
+
+      - name: Generate Release Body
+        run: |
+          cp .github/workflows/release_body.md release_body.md
+          VERSION=${{ needs.extract-version.outputs.version }}
+          VERSION=${VERSION#v}  # Remove 'v' prefix
+          sed -i.bak "s/\${GITHUB_REF#refs\/tags\/v}/${VERSION}/g" release_body.md
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.extract-version.outputs.version }}
+          artifacts: release/clean-dev-dirs-*-linux-x86_64.tar.gz
+          bodyFile: release_body.md
+          generateReleaseNotes: true
+          allowUpdates: true
+          updateOnlyUnreleased: false
+
+  build-macos-intel:
+    needs: extract-version
+    name: Build macOS Intel Binary
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Create archive
+        run: |
+          VERSION=${{ needs.extract-version.outputs.version }}
+          VERSION=${VERSION#v}  # Remove 'v' prefix
+          mkdir -p release
+          cp target/x86_64-apple-darwin/release/clean-dev-dirs release/
+          cd release
+          tar -czvf clean-dev-dirs-${VERSION}-macos-x86_64.tar.gz clean-dev-dirs
+          cd ..
+
+      - name: Calculate SHA256
+        run: |
+          VERSION=${{ needs.extract-version.outputs.version }}
+          VERSION=${VERSION#v}  # Remove 'v' prefix
+          cd release
+          SHA256=$(shasum -a 256 clean-dev-dirs-${VERSION}-macos-x86_64.tar.gz | cut -d ' ' -f 1)
+          echo "SHA256_INTEL=${SHA256}" >> $GITHUB_ENV
+          echo "### SHA256 (Intel)"  > sha256.md
+          echo '```' >> sha256.md
+          echo "${SHA256}  clean-dev-dirs-${VERSION}-macos-x86_64.tar.gz" >> sha256.md
+          echo '```' >> sha256.md
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.extract-version.outputs.version }}
+          artifacts: release/clean-dev-dirs-*-macos-x86_64.tar.gz
+          bodyFile: release/sha256.md
+          allowUpdates: true
+          updateOnlyUnreleased: false
+
+  build-macos-arm:
+    needs: extract-version
+    name: Build macOS Apple Silicon Binary
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Build release binary
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Create archive
+        run: |
+          VERSION=${{ needs.extract-version.outputs.version }}
+          VERSION=${VERSION#v}  # Remove 'v' prefix
+          mkdir -p release
+          cp target/aarch64-apple-darwin/release/clean-dev-dirs release/
+          cd release
+          tar -czvf clean-dev-dirs-${VERSION}-macos-arm64.tar.gz clean-dev-dirs
+          cd ..
+
+      - name: Calculate SHA256
+        run: |
+          VERSION=${{ needs.extract-version.outputs.version }}
+          VERSION=${VERSION#v}  # Remove 'v' prefix
+          cd release
+          SHA256=$(shasum -a 256 clean-dev-dirs-${VERSION}-macos-arm64.tar.gz | cut -d ' ' -f 1)
+          echo "SHA256_ARM=${SHA256}" >> $GITHUB_ENV
+          echo "### SHA256 (Apple Silicon)" > sha256.md
+          echo '```' >> sha256.md
+          echo "${SHA256}  clean-dev-dirs-${VERSION}-macos-arm64.tar.gz" >> sha256.md
+          echo '```' >> sha256.md
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.extract-version.outputs.version }}
+          artifacts: release/clean-dev-dirs-*-macos-arm64.tar.gz
+          bodyFile: release/sha256.md
+          allowUpdates: true
+          updateOnlyUnreleased: false
+
+  publish-crates-io:
+    name: Publish to crates.io
+    needs: [extract-version, build-linux, build-macos-intel, build-macos-arm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish to crates.io
+        env:
+          CRATES_IO_TOKEN: ${{ secrets.CRATES_TOKEN }}
+        run: |
+          cargo login $CRATES_IO_TOKEN
+          cargo publish --dry-run
+          cargo publish
+
+  notify-homebrew:
+    name: Notify Homebrew Tap
+    needs: [extract-version, build-linux, build-macos-intel, build-macos-arm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if PR already exists in tap (guard)
+        id: guard
+        env:
+          TAG: ${{ needs.extract-version.outputs.version }}
+          TOKEN: ${{ secrets.CLEAN_DEV_DIRS_PRS_TOKEN }}
+        run: |
+          OWNER="clean-dev-dirs"
+          REPO="homebrew-clean-dev-dirs"
+          HEAD="${OWNER}:bump/clean-dev-dirs-${TAG}"
+          RES=$(curl -s -H "Authorization: token ${TOKEN}" \
+            "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&head=${HEAD}")
+          COUNT=$(echo "$RES" | jq 'length')
+          if [ "$COUNT" -gt 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Found existing PR for ${HEAD}, skipping dispatch"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No existing PR for ${HEAD}, will dispatch"
+          fi
+      - name: Dispatch update to homebrew-clean-dev-dirs
+        if: steps.guard.outputs.exists == 'false'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.CLEAN_DEV_DIRS_PRS_TOKEN }}
+          repository: clean-dev-dirs/homebrew-clean-dev-dirs
+          event-type: clean-dev-dirs-release
+          client-payload: |
+            {
+              "tag": "${{ needs.extract-version.outputs.version }}",
+              "tarball_url": "https://github.com/clean-dev-dirs/clean-dev-dirs/archive/refs/tags/${{ needs.extract-version.outputs.version }}.tar.gz"
+            }
