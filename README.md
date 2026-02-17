@@ -50,7 +50,7 @@ clean-dev-dirs --interactive
 
 ## Inspiration
 
-This project is inspired by [cargo-clean-all](https://github.com/dnlmlr/cargo-clean-all), a Rust-specific tool for cleaning cargo projects. We've improved upon the original concept with:
+This project is inspired by [cargo-clean-all](https://github.com/dnlmlr/cargo-clean-all), a Rust-specific tool for cleaning cargo projects. I've improved upon the original concept with:
 
 - **Multi-language support**: Extended beyond Rust to support Node.js, Python, Go, Java/Kotlin, C/C++, Swift, and .NET/C# projects
 - **Parallel scanning**: Significantly faster directory traversal using multithreading
