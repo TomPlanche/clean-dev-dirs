@@ -25,6 +25,8 @@ jobs:
     needs: extract-version
     name: Build Linux Binary
     runs-on: ubuntu-latest
+    outputs:
+      sha256_bottle: ${{ steps.bottle.outputs.sha256 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,6 +47,17 @@ jobs:
           tar -czvf clean-dev-dirs-${VERSION}-linux-x86_64.tar.gz clean-dev-dirs
           cd ..
 
+      - name: Create Homebrew bottle
+        id: bottle
+        run: |
+          VERSION=${{ needs.extract-version.outputs.version }}
+          VERSION=${VERSION#v}
+          mkdir -p clean-dev-dirs/${VERSION}/bin
+          cp target/release/clean-dev-dirs clean-dev-dirs/${VERSION}/bin/
+          tar -czf clean-dev-dirs-${VERSION}.x86_64_linux.bottle.tar.gz clean-dev-dirs/
+          SHA256=$(shasum -a 256 clean-dev-dirs-${VERSION}.x86_64_linux.bottle.tar.gz | cut -d ' ' -f 1)
+          echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
+
       - name: Generate Release Body
         run: |
           cp .github/workflows/release_body.md release_body.md
@@ -56,7 +69,7 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.extract-version.outputs.version }}
-          artifacts: release/clean-dev-dirs-*-linux-x86_64.tar.gz
+          artifacts: "release/clean-dev-dirs-*-linux-x86_64.tar.gz,clean-dev-dirs-*.x86_64_linux.bottle.tar.gz"
           bodyFile: release_body.md
           generateReleaseNotes: true
           allowUpdates: true
@@ -66,6 +79,8 @@ jobs:
     needs: extract-version
     name: Build macOS Intel Binary
     runs-on: macos-15-intel
+    outputs:
+      sha256_bottle: ${{ steps.bottle.outputs.sha256 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -88,24 +103,22 @@ jobs:
           tar -czvf clean-dev-dirs-${VERSION}-macos-x86_64.tar.gz clean-dev-dirs
           cd ..
 
-      - name: Calculate SHA256
+      - name: Create Homebrew bottle
+        id: bottle
         run: |
           VERSION=${{ needs.extract-version.outputs.version }}
-          VERSION=${VERSION#v}  # Remove 'v' prefix
-          cd release
-          SHA256=$(shasum -a 256 clean-dev-dirs-${VERSION}-macos-x86_64.tar.gz | cut -d ' ' -f 1)
-          echo "SHA256_INTEL=${SHA256}" >> $GITHUB_ENV
-          echo "### SHA256 (Intel)"  > sha256.md
-          echo '```' >> sha256.md
-          echo "${SHA256}  clean-dev-dirs-${VERSION}-macos-x86_64.tar.gz" >> sha256.md
-          echo '```' >> sha256.md
+          VERSION=${VERSION#v}
+          mkdir -p clean-dev-dirs/${VERSION}/bin
+          cp target/x86_64-apple-darwin/release/clean-dev-dirs clean-dev-dirs/${VERSION}/bin/
+          tar -czf clean-dev-dirs-${VERSION}.sequoia.bottle.tar.gz clean-dev-dirs/
+          SHA256=$(shasum -a 256 clean-dev-dirs-${VERSION}.sequoia.bottle.tar.gz | cut -d ' ' -f 1)
+          echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
 
       - name: Release
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.extract-version.outputs.version }}
-          artifacts: release/clean-dev-dirs-*-macos-x86_64.tar.gz
-          bodyFile: release/sha256.md
+          artifacts: "release/clean-dev-dirs-*-macos-x86_64.tar.gz,clean-dev-dirs-*.sequoia.bottle.tar.gz"
           allowUpdates: true
           updateOnlyUnreleased: false
 
@@ -113,6 +126,8 @@ jobs:
     needs: extract-version
     name: Build macOS Apple Silicon Binary
     runs-on: macos-latest
+    outputs:
+      sha256_bottle: ${{ steps.bottle.outputs.sha256 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -135,24 +150,22 @@ jobs:
           tar -czvf clean-dev-dirs-${VERSION}-macos-arm64.tar.gz clean-dev-dirs
           cd ..
 
-      - name: Calculate SHA256
+      - name: Create Homebrew bottle
+        id: bottle
         run: |
           VERSION=${{ needs.extract-version.outputs.version }}
-          VERSION=${VERSION#v}  # Remove 'v' prefix
-          cd release
-          SHA256=$(shasum -a 256 clean-dev-dirs-${VERSION}-macos-arm64.tar.gz | cut -d ' ' -f 1)
-          echo "SHA256_ARM=${SHA256}" >> $GITHUB_ENV
-          echo "### SHA256 (Apple Silicon)" > sha256.md
-          echo '```' >> sha256.md
-          echo "${SHA256}  clean-dev-dirs-${VERSION}-macos-arm64.tar.gz" >> sha256.md
-          echo '```' >> sha256.md
+          VERSION=${VERSION#v}
+          mkdir -p clean-dev-dirs/${VERSION}/bin
+          cp target/aarch64-apple-darwin/release/clean-dev-dirs clean-dev-dirs/${VERSION}/bin/
+          tar -czf clean-dev-dirs-${VERSION}.arm64_sequoia.bottle.tar.gz clean-dev-dirs/
+          SHA256=$(shasum -a 256 clean-dev-dirs-${VERSION}.arm64_sequoia.bottle.tar.gz | cut -d ' ' -f 1)
+          echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
 
       - name: Release
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.extract-version.outputs.version }}
-          artifacts: release/clean-dev-dirs-*-macos-arm64.tar.gz
-          bodyFile: release/sha256.md
+          artifacts: "release/clean-dev-dirs-*-macos-arm64.tar.gz,clean-dev-dirs-*.arm64_sequoia.bottle.tar.gz"
           allowUpdates: true
           updateOnlyUnreleased: false
 
@@ -171,6 +184,13 @@ jobs:
         env:
           CRATES_IO_TOKEN: ${{ secrets.CRATES_TOKEN }}
         run: |
+          VERSION=${{ needs.extract-version.outputs.version }}
+          VERSION=${VERSION#v}
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://crates.io/api/v1/crates/clean-dev-dirs/${VERSION}")
+          if [ "${HTTP_STATUS}" = "200" ]; then
+            echo "Version ${VERSION} already published on crates.io, skipping."
+            exit 0
+          fi
           cargo login $CRATES_IO_TOKEN
           cargo publish --dry-run
           cargo publish
@@ -209,5 +229,8 @@ jobs:
           client-payload: |
             {
               "tag": "${{ needs.extract-version.outputs.version }}",
-              "tarball_url": "https://github.com/clean-dev-dirs/clean-dev-dirs/archive/refs/tags/${{ needs.extract-version.outputs.version }}.tar.gz"
+              "tarball_url": "https://github.com/clean-dev-dirs/clean-dev-dirs/archive/refs/tags/${{ needs.extract-version.outputs.version }}.tar.gz",
+              "sha256_arm64_sequoia": "${{ needs.build-macos-arm.outputs.sha256_bottle }}",
+              "sha256_sequoia": "${{ needs.build-macos-intel.outputs.sha256_bottle }}",
+              "sha256_x86_64_linux": "${{ needs.build-linux.outputs.sha256_bottle }}"
             }
