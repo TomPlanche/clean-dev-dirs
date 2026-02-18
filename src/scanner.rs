@@ -150,10 +150,16 @@ impl Scanner {
         let projects_with_sizes: Vec<_> = potential_projects
             .into_par_iter()
             .filter_map(|mut project| {
-                let size = self.calculate_build_dir_size(&project.build_arts.path);
-                project.build_arts.size = size;
+                if project.build_arts.size == 0 {
+                    project.build_arts.size =
+                        self.calculate_build_dir_size(&project.build_arts.path);
+                }
 
-                if size > 0 { Some(project) } else { None }
+                if project.build_arts.size > 0 {
+                    Some(project)
+                } else {
+                    None
+                }
             })
             .collect();
 
@@ -728,7 +734,7 @@ impl Scanner {
 
             let build_arts = BuildArtifacts {
                 path: build_path,
-                size: 0, // Will be calculated later
+                size: largest_size,
             };
 
             return Some(Project::new(
@@ -1215,18 +1221,18 @@ impl Scanner {
         let csproj_file = Self::find_file_with_extension(path, "csproj")?;
 
         // Pick the larger of bin/ and obj/ as the primary build artifact
-        let build_path = match (bin_dir.exists(), obj_dir.exists()) {
+        let (build_path, precomputed_size) = match (bin_dir.exists(), obj_dir.exists()) {
             (true, true) => {
                 let bin_size = Self::calculate_directory_size(&bin_dir).unwrap_or(0);
                 let obj_size = Self::calculate_directory_size(&obj_dir).unwrap_or(0);
                 if obj_size >= bin_size {
-                    obj_dir
+                    (obj_dir, obj_size)
                 } else {
-                    bin_dir
+                    (bin_dir, bin_size)
                 }
             }
-            (true, false) => bin_dir,
-            (false, true) => obj_dir,
+            (true, false) => (bin_dir, 0),
+            (false, true) => (obj_dir, 0),
             (false, false) => return None,
         };
 
@@ -1237,7 +1243,7 @@ impl Scanner {
 
         let build_arts = BuildArtifacts {
             path: build_path,
-            size: 0,
+            size: precomputed_size,
         };
 
         Some(Project::new(
