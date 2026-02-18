@@ -184,6 +184,13 @@ jobs:
         env:
           CRATES_IO_TOKEN: ${{ secrets.CRATES_TOKEN }}
         run: |
+          VERSION=${{ needs.extract-version.outputs.version }}
+          VERSION=${VERSION#v}
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://crates.io/api/v1/crates/clean-dev-dirs/${VERSION}")
+          if [ "${HTTP_STATUS}" = "200" ]; then
+            echo "Version ${VERSION} already published on crates.io, skipping."
+            exit 0
+          fi
           cargo login $CRATES_IO_TOKEN
           cargo publish --dry-run
           cargo publish
